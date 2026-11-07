@@ -5,14 +5,14 @@ Standard create, read, update and delete operation contract between a module's s
 
 ## Why This Exists
 
-`crud` holds the wire contract shared by a domain module's server handlers (`ops.go`) and its client screens ([`webtyp.com/view`](https://github.com/webtyp/view)) or callers ([`webtyp.com/router`](https://github.com/webtyp/router)): how a paged or ID-filtered read is requested ([`ReadArgs`](read.go), [`Cap`](read.go), [`MaxPage`](read.go)) and how records are created, read, patched, and deleted ([`CreateArgs`](args.go), [`UpdateArgs`](args.go), [`DeleteArgs`](args.go), [`MountCreate`](mount.go), [`MountRead`](mount.go), [`MountUpdate`](mount.go), [`MountDelete`](mount.go)) using [`model.Action`](https://github.com/webtyp/model) (`model.Create`, `model.Read`, `model.Update`, `model.Delete`) without `op string` parameters or generics.
+`crud` holds the wire contract shared by a domain module's server handlers (`ops.go`) and its client screens ([`webtyp.com/view`](https://github.com/webtyp/view)) or callers ([`webtyp.com/router`](https://github.com/webtyp/router)): how a paged or ID-filtered read is requested ([`ReadArgs`](read.go), [`Cap`](read.go), [`MaxPage`](read.go)) and how records are created, read, patched, and deleted ([`CreateArgs`](create.go), [`UpdateArgs`](update.go), [`DeleteArgs`](delete.go), [`MountCreate`](create.go), [`MountRead`](read.go), [`MountUpdate`](update.go), [`MountDelete`](delete.go)) using [`model.Action`](https://github.com/webtyp/model) (`model.Create`, `model.Read`, `model.Update`, `model.Delete`) without `op string` parameters or generics.
 
 | Without `crud` | With `crud` |
 |---|---|
 | `ListArgs`, `Cap`, `MountSave`, and `MountDelete` lived in `webtyp.com/view`, which imports `webtyp.com/dom` — so every server and Cloudflare Worker linked the browser UI kit | Servers and edge Workers import `webtyp.com/crud` (zero UI imports, enforced by [`tests/no_ui_test.go`](tests/no_ui_test.go)) and never `webtyp.com/view` |
-| Every module invented `OpList*`, `OpSave*`, `OpUpdate*`, `OpDelete*` string constants and repeated `.Requires(...)` on every route | [`MountCreate`](mount.go), [`MountRead`](mount.go), [`MountUpdate`](mount.go), and [`MountDelete`](mount.go) derive `<ModelName>_c\|r\|u\|d` via [`model.Action.String()`](https://github.com/webtyp/model) and `.Requires(model.Resource(modelName), action)` automatically from [`model.ModuleNaming`](https://github.com/webtyp/model) |
-| Batch saves ran record-by-record in a loop outside the module's transaction | [`MountCreate`](mount.go) passes the entire decoded `model.ModelSlice` in a single call so the module commits or rolls back the whole batch in one `db.Tx` |
-| Unbounded read queries when a client sent `limit: 0` or `limit: 999999` | [`MountRead`](mount.go) and [`crud.Cap(args.Limit)`](read.go) clamp every request to `1..crud.MaxPage` (`500`) |
+| Every module invented `OpList*`, `OpSave*`, `OpUpdate*`, `OpDelete*` string constants and repeated `.Requires(...)` on every route | [`MountCreate`](create.go), [`MountRead`](read.go), [`MountUpdate`](update.go), and [`MountDelete`](delete.go) derive `<ModelName>_c\|r\|u\|d` via [`model.Action.String()`](https://github.com/webtyp/model) and `.Requires(model.Resource(modelName), action)` automatically from [`model.ModuleNaming`](https://github.com/webtyp/model) |
+| Batch saves ran record-by-record in a loop outside the module's transaction | [`MountCreate`](create.go) passes the entire decoded `model.ModelSlice` in a single call so the module commits or rolls back the whole batch in one `db.Tx` |
+| Unbounded read queries when a client sent `limit: 0` or `limit: 999999` | [`MountRead`](read.go) and [`crud.Cap(args.Limit)`](read.go) clamp every request to `1..crud.MaxPage` (`500`) |
 
 ## Before You Start
 
@@ -60,7 +60,7 @@ func (m *Module) MountOperations(reg router.OperationRegistry) {
 
 ### Step 2: Call create, read, update, and delete from a client or test
 
-**Goal:** Send typed requests to the mounted operations through any [`router.Caller`](https://github.com/webtyp/router) using [`crud.Op`](mount.go) and [`model.Action`](https://github.com/webtyp/model).
+**Goal:** Send typed requests to the mounted operations through any [`router.Caller`](https://github.com/webtyp/router) using [`crud.Op`](op.go) and [`model.Action`](https://github.com/webtyp/model).
 
 ```go
 package device_test
@@ -107,25 +107,30 @@ func ExampleClient(mod *device.Module) {
 
 | I want to… | Use |
 |---|---|
-| Build the canonical operation name of a model | `crud.Op(m, model.Create \| model.Read \| model.Update \| model.Delete)` ([`mount.go`](mount.go)) |
-| Mount a transactional batch create operation | `crud.MountCreate(reg, newList, create)` ([`mount.go`](mount.go)) |
-| Mount a capped read operation | `crud.MountRead(reg, &Model{}, read)` ([`mount.go`](mount.go)) |
-| Mount a field-patch update operation | `crud.MountUpdate(reg, newRecord, update)` ([`mount.go`](mount.go)) |
-| Mount a batch delete-by-IDs operation | `crud.MountDelete(reg, &Model{}, remove)` ([`mount.go`](mount.go)) |
+| Build the canonical operation name of a model | `crud.Op(m, model.Create \| model.Read \| model.Update \| model.Delete)` ([`op.go`](op.go)) |
+| Mount a transactional batch create operation | `crud.MountCreate(reg, newList, create)` ([`create.go`](create.go)) |
+| Mount a capped read operation | `crud.MountRead(reg, &Model{}, read)` ([`read.go`](read.go)) |
+| Mount a field-patch update operation | `crud.MountUpdate(reg, newRecord, update)` ([`update.go`](update.go)) |
+| Mount a batch delete-by-IDs operation | `crud.MountDelete(reg, &Model{}, remove)` ([`delete.go`](delete.go)) |
 | Cap a page limit manually to `1..500` | `crud.Cap(args.Limit)` ([`read.go`](read.go)) |
-| Send a create batch from a client | `caller.Call(op, &crud.CreateArgs{Records: recs}, out, done)` ([`args.go`](args.go)) |
-| Send a multi-row field patch from a client | `caller.Call(op, &crud.UpdateArgs{IDs: ids, Fields: cols, Record: rec}, nil, done)` ([`args.go`](args.go)) |
-| Send a delete-by-IDs call from a client | `caller.Call(op, &crud.DeleteArgs{IDs: ids}, nil, done)` ([`args.go`](args.go)) |
+| Send a create batch from a client | `caller.Call(op, &crud.CreateArgs{Records: recs}, out, done)` ([`create.go`](create.go)) |
+| Send a multi-row field patch from a client | `caller.Call(op, &crud.UpdateArgs{IDs: ids, Fields: cols, Record: rec}, nil, done)` ([`update.go`](update.go)) |
+| Send a delete-by-IDs call from a client | `caller.Call(op, &crud.DeleteArgs{IDs: ids}, nil, done)` ([`delete.go`](delete.go)) |
 
 ## Documentation Map
 
 | Order | Document | What question it answers & when to read it |
 |---|---|---|
-| 1 | [`read.go`](read.go) | How `ReadArgs`, `ReadArgsModel`, `Cap`, and `MaxPage` bound and serialize read queries |
-| 2 | [`mount.go`](mount.go) | How `Op`, `MountCreate`, `MountRead`, `MountUpdate`, and `MountDelete` register canonical operations without `op string` or generics |
-| 3 | [`args.go`](args.go) | What JSON wire shapes `CreateArgs`, `UpdateArgs`, and `DeleteArgs` encode and decode |
-| 4 | [`errors.go`](errors.go) | Which `model.Invalid` error constants (`ErrNoRecords`, `ErrNoIDs`, `ErrNoFields`, `ErrCannotRead`) return `400 Bad Request` |
-| 5 | [`docs/ARCHITECTURE_ANALYSIS.md`](docs/ARCHITECTURE_ANALYSIS.md) | Pros, cons, memory allocation benchmarks (`allocs/op`, `B/op`), and frontend/backend production analysis |
-| 6 | [`docs/STANDARD_OPS_ANALYSIS.md`](docs/STANDARD_OPS_ANALYSIS.md) | Analysis of the 4-operation standardization (`create`, `read`, `update`, `delete`), generics removal, and batch transactionality |
-| 7 | [`docs/PAGINATION_LIMITS.md`](docs/PAGINATION_LIMITS.md) | Why `MaxPage = 500` and `DefaultPage = 50` exist, how `Cap` protects the server, and how they compare to industry standards |
-| 8 | [`AGENTS.md`](AGENTS.md) | Architectural rules and the zero-UI-dependency invariant enforced by [`tests/no_ui_test.go`](tests/no_ui_test.go) |
+| 1 | [`create.go`](create.go) | How `CreateArgs` and `MountCreate` batch record creation transactionally |
+| 2 | [`read.go`](read.go) | How `ReadArgs`, `ReadArgsModel`, `Cap`, `MaxPage`, and `MountRead` bound and serialize read queries |
+| 3 | [`update.go`](update.go) | How `UpdateArgs` and `MountUpdate` patch fields across rows |
+| 4 | [`delete.go`](delete.go) | How `DeleteArgs` and `MountDelete` remove records by IDs |
+| 5 | [`validate.go`](validate.go) | How batch limits, ID sanitization, field immutability, and declarative schema rules are validated |
+| 6 | [`op.go`](op.go) | How canonical operation names and router registration are wired without generics |
+| 7 | [`errors.go`](errors.go) | Which `model.Invalid` error constants (`ErrNoRecords`, `ErrNoIDs`, `ErrNoFields`, `ErrCannotRead`, `ErrBatchTooLarge`, etc.) return `400 Bad Request` |
+| 8 | [`docs/ARCHITECTURE_ANALYSIS.md`](docs/ARCHITECTURE_ANALYSIS.md) | Pros, cons, memory allocation benchmarks (`allocs/op`, `B/op`), and frontend/backend production analysis |
+| 9 | [`docs/STANDARD_OPS_ANALYSIS.md`](docs/STANDARD_OPS_ANALYSIS.md) | Analysis of the 4-operation standardization (`create`, `read`, `update`, `delete`), generics removal, and batch transactionality |
+| 10 | [`docs/PAGINATION_LIMITS.md`](docs/PAGINATION_LIMITS.md) | Why `MaxPage = 500` and `DefaultPage = 50` exist, how `Cap` protects the server, and how they compare to industry standards |
+| 11 | [`docs/SECURITY_ANALYSIS.md`](docs/SECURITY_ANALYSIS.md) | Security vulnerability matrix, boundary input mitigations (DoS, mass assignment, ID validation, search truncation), and test suite |
+| 12 | [`docs/PERFORMANCE_ANALYSIS.md`](docs/PERFORMANCE_ANALYSIS.md) | Empirical benchmarks (19 scenarios), memory allocation analysis, and security vs performance ledger |
+| 13 | [`AGENTS.md`](AGENTS.md) | Architectural rules and the zero-UI-dependency invariant enforced by [`tests/no_ui_test.go`](tests/no_ui_test.go) |

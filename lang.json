@@ -2,10 +2,14 @@
   "languages": ["es", "zh", "hi", "ar", "pt", "fr", "de", "ru"],
   "keys": {
     "after": ["después", "之后", "के बाद", "بعد", "após", "après", "nach", "после"],
+    "crud: batch size exceeds limit": ["crud: el tamaño del lote supera el límite", "crud: 批次大小超过限制", "crud: बैच का आकार सीमा से अधिक है", "crud: حجم الدفعة يتجاوز الحد المسموح به", "crud: o tamanho do lote excede o limite", "crud : la taille du lot dépasse la limite", "crud: Batch-Größe überschreitet das Limit", "crud: размер пакета превышает лимит"],
     "crud: cannot read the request": ["crud: no se puede leer la solicitud", "crud: 无法读取请求", "crud: अनुरोध पढ़ा नहीं जा सका", "crud: تعذّر قراءة الطلب", "crud: não foi possível ler a solicitação", "crud : impossible de lire la requête", "crud: Anfrage kann nicht gelesen werden", "crud: не удалось прочитать запрос"],
+    "crud: empty id": ["crud: identificador vacío", "crud: ID 为空", "crud: आईडी रिक्त है", "crud: معرّف فارغ", "crud: identificador vazio", "crud : identifiant vide", "crud: leere ID", "crud: пустой идентификатор"],
+    "crud: immutable field": ["crud: campo inmutable", "crud: 不可变字段", "crud: अपरिवर्तनीय फ़ील्ड", "crud: حقل غير قابل للتعديل", "crud: campo imutável", "crud : champ immuable", "crud: unveränderliches Feld", "crud: неизменяемое поле"],
     "crud: no fields given": ["crud: no se indicaron campos", "crud: 未指定字段", "crud: कोई फ़ील्ड नहीं दिया गया", "crud: لم يتم تحديد حقول", "crud: nenhum campo informado", "crud : aucun champ indiqué", "crud: keine Felder angegeben", "crud: поля не указаны"],
     "crud: no ids given": ["crud: no se indicaron identificadores", "crud: 未提供 ID", "crud: कोई आईडी नहीं दी गई", "crud: لم يتم تحديد معرّفات", "crud: nenhum identificador informado", "crud : aucun identifiant indiqué", "crud: keine IDs angegeben", "crud: идентификаторы не указаны"],
     "crud: no records to save": ["crud: no hay registros para guardar", "crud: 没有可保存的记录", "crud: सहेजने के लिए कोई रिकॉर्ड नहीं है", "crud: لا توجد سجلات للحفظ", "crud: nenhum registro para salvar", "crud : aucun enregistrement à sauvegarder", "crud: keine Datensätze zum Speichern", "crud: нет записей для сохранения"],
+    "crud: unknown field": ["crud: campo desconocido", "crud: 未知字段", "crud: अज्ञात फ़ील्ड", "crud: حقل غير معروف", "crud: campo desconhecido", "crud : champ inconnu", "crud: unbekanntes Feld", "crud: неизвестное поле"],
     "search": ["buscar", "搜索", "खोजें", "بحث", "buscar", "rechercher", "suchen", "поиск"]
   }
 }
