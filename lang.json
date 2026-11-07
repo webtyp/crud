@@ -1,0 +1,11 @@
+{
+  "languages": ["es", "zh", "hi", "ar", "pt", "fr", "de", "ru"],
+  "keys": {
+    "after": ["después", "之后", "के बाद", "بعد", "após", "après", "nach", "после"],
+    "crud: cannot read the request": ["crud: no se puede leer la solicitud", "crud: 无法读取请求", "crud: अनुरोध पढ़ा नहीं जा सका", "crud: تعذّر قراءة الطلب", "crud: não foi possível ler a solicitação", "crud : impossible de lire la requête", "crud: Anfrage kann nicht gelesen werden", "crud: не удалось прочитать запрос"],
+    "crud: no fields given": ["crud: no se indicaron campos", "crud: 未指定字段", "crud: कोई फ़ील्ड नहीं दिया गया", "crud: لم يتم تحديد حقول", "crud: nenhum campo informado", "crud : aucun champ indiqué", "crud: keine Felder angegeben", "crud: поля не указаны"],
+    "crud: no ids given": ["crud: no se indicaron identificadores", "crud: 未提供 ID", "crud: कोई आईडी नहीं दी गई", "crud: لم يتم تحديد معرّفات", "crud: nenhum identificador informado", "crud : aucun identifiant indiqué", "crud: keine IDs angegeben", "crud: идентификаторы не указаны"],
+    "crud: no records to save": ["crud: no hay registros para guardar", "crud: 没有可保存的记录", "crud: सहेजने के लिए कोई रिकॉर्ड नहीं है", "crud: لا توجد سجلات للحفظ", "crud: nenhum registro para salvar", "crud : aucun enregistrement à sauvegarder", "crud: keine Datensätze zum Speichern", "crud: нет записей для сохранения"],
+    "search": ["buscar", "搜索", "खोजें", "بحث", "buscar", "rechercher", "suchen", "поиск"]
+  }
+}
