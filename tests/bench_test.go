@@ -6,8 +6,6 @@ import (
 	"webtyp.com/crud"
 	"webtyp.com/json"
 	"webtyp.com/model"
-	"webtyp.com/router"
-	"webtyp.com/router/loopback"
 )
 
 var sinkOp string
@@ -172,18 +170,18 @@ func BenchmarkDeleteArgs_Encode_10(b *testing.B) {
 type benchModule struct{}
 
 func (m *benchModule) ModelName() string { return "bench" }
-func (m *benchModule) MountOperations(reg router.OperationRegistry) {
-	crud.MountCreate(reg, func() model.ModelSlice { return &mockRecordList{} }, func(list model.ModelSlice) error { return nil })
-	crud.MountRead(reg, &mockRecord{}, func(args crud.ReadArgs) (model.ModelSlice, error) {
+func (m *benchModule) MountOperations(reg crud.Registry) {
+	reg.Create(func() model.ModelSlice { return &mockRecordList{} }, func(c crud.Caller, list model.ModelSlice) error { return nil })
+	reg.Read(&mockRecord{}, nil, func(c crud.Caller, args crud.ReadArgs, filter model.Model) (model.ModelSlice, error) {
 		return &mockRecordList{{ID: "01J9Z8X7W6V5", Name: "Core Switch"}}, nil
 	})
-	crud.MountUpdate(reg, func() model.Model { return &mockRecord{} }, func(ids, fields []string, r model.Model) error { return nil })
-	crud.MountDelete(reg, &mockRecord{}, func(ids []string) error { return nil })
+	reg.Update(func() model.Model { return &mockRecord{} }, func(c crud.Caller, ids, fields []string, r model.Model) error { return nil })
+	reg.Delete(&mockRecord{}, func(c crud.Caller, ids []string) error { return nil })
 }
 
-func BenchmarkMountCreate_Loopback_1(b *testing.B) {
+func BenchmarkCreate_Loopback_1(b *testing.B) {
 	mod := &benchModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	op := "bench." + crud.Op(&mockRecord{}, model.Create)
 	args := crud.CreateArgs{Records: []model.Model{&mockRecord{ID: "01J9Z8X7W6V5", Name: "Core Switch"}}}
 	var out mockRecord
@@ -195,9 +193,9 @@ func BenchmarkMountCreate_Loopback_1(b *testing.B) {
 	}
 }
 
-func BenchmarkMountCreate_Loopback_10(b *testing.B) {
+func BenchmarkCreate_Loopback_10(b *testing.B) {
 	mod := &benchModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	op := "bench." + crud.Op(&mockRecord{}, model.Create)
 	recs := make([]model.Model, 10)
 	for i := range recs {
@@ -213,9 +211,9 @@ func BenchmarkMountCreate_Loopback_10(b *testing.B) {
 	}
 }
 
-func BenchmarkMountCreate_Loopback_100(b *testing.B) {
+func BenchmarkCreate_Loopback_100(b *testing.B) {
 	mod := &benchModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	op := "bench." + crud.Op(&mockRecord{}, model.Create)
 	recs := make([]model.Model, 100)
 	for i := range recs {
@@ -231,9 +229,9 @@ func BenchmarkMountCreate_Loopback_100(b *testing.B) {
 	}
 }
 
-func BenchmarkMountRead_Loopback_1(b *testing.B) {
+func BenchmarkRead_Loopback_1(b *testing.B) {
 	mod := &benchModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	op := "bench." + crud.Op(&mockRecord{}, model.Read)
 	args := crud.ReadArgs{Search: "Core", Limit: 20}
 	var out mockRecordList
@@ -246,9 +244,9 @@ func BenchmarkMountRead_Loopback_1(b *testing.B) {
 	}
 }
 
-func BenchmarkMountUpdate_Loopback_1(b *testing.B) {
+func BenchmarkUpdate_Loopback_1(b *testing.B) {
 	mod := &benchModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	op := "bench." + crud.Op(&mockRecord{}, model.Update)
 	args := crud.UpdateArgs{
 		IDs:    []string{"01J9Z8X7W6V5"},
@@ -263,9 +261,9 @@ func BenchmarkMountUpdate_Loopback_1(b *testing.B) {
 	}
 }
 
-func BenchmarkMountDelete_Loopback_1(b *testing.B) {
+func BenchmarkDelete_Loopback_1(b *testing.B) {
 	mod := &benchModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	op := "bench." + crud.Op(&mockRecord{}, model.Delete)
 	args := crud.DeleteArgs{IDs: []string{"01J9Z8X7W6V5"}}
 	nop := func(error) {}
@@ -276,9 +274,9 @@ func BenchmarkMountDelete_Loopback_1(b *testing.B) {
 	}
 }
 
-func BenchmarkMountDelete_Loopback_10(b *testing.B) {
+func BenchmarkDelete_Loopback_10(b *testing.B) {
 	mod := &benchModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	op := "bench." + crud.Op(&mockRecord{}, model.Delete)
 	ids := make([]string, 10)
 	for i := range ids {

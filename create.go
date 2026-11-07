@@ -3,7 +3,6 @@ package crud
 import (
 	"webtyp.com/model"
 	"webtyp.com/router"
-	"webtyp.com/rpc"
 )
 
 // CreateArgs is what a client sends to a create operation: whole records, persisted in one transactional batch.
@@ -46,34 +45,35 @@ func (c *createIn) DecodeFields(r model.FieldReader) {
 	}
 }
 
-// MountCreate registers Op(sample, model.Create) as the batch creation operation of an entity:
-// it decodes all records sent in {"records":[…]} into a fresh ModelSlice from newList, invokes
-// create(list) once so the module can persist the entire batch in a single transaction, and
-// answers the last record in the batch (create may fill its id).
-// No records → 400; a create error → its own status.
-//
-//	crud.MountCreate(reg, func() model.ModelSlice { return &DeviceList{} }, func(list model.ModelSlice) error {
-//		return m.CreateDevices(*list.(*DeviceList))
-//	})
-func MountCreate(reg router.OperationRegistry, newList func() model.ModelSlice, create func(list model.ModelSlice) error) router.Route {
+func (r *registry) Create(newList func() model.ModelSlice, create func(c Caller, list model.ModelSlice) error) Route {
+	if newList == nil || create == nil {
+		return r.fail(ErrNilFunction)
+	}
 	sample := newList().Append().(model.Model)
-	return mountOp(reg, sample, model.Create, sample, func(ctx router.Context) {
+	if sample.ModelName() == "" {
+		return r.fail(ErrEmptyModelName)
+	}
+	schema := sample.Schema()
+	h := func(ctx router.Context) {
 		in := createIn{list: newList()}
 		if err := ctx.Decode(&in); err != nil {
-			rpc.WriteError(ctx, ErrCannotRead)
+			router.WriteError(ctx, ErrCannotRead)
 			return
 		}
-		if err := validateCreateBatch(in.list, in.tooMany); err != nil {
-			rpc.WriteError(ctx, err)
+		if err := validateCreateBatch(schema, in.list, in.tooMany); err != nil {
+			router.WriteError(ctx, err)
 			return
 		}
-		if err := create(in.list); err != nil {
-			rpc.WriteError(ctx, err)
+		if err := create(callerOf(ctx), in.list); err != nil {
+			router.WriteError(ctx, err)
 			return
 		}
 		last := in.list.At(in.list.Len() - 1).(model.Encodable)
 		if err := ctx.Encode(last); err != nil {
-			rpc.WriteError(ctx, err)
+			router.WriteError(ctx, err)
 		}
-	})
+	}
+	rt := r.reg.Operation(Op(sample, model.Create), h).Requires(model.Resource(sample.ModelName()), model.Create)
+	rt.Accepts(sample)
+	return route{rt}
 }

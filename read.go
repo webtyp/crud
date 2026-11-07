@@ -3,7 +3,6 @@ package crud
 import (
 	"webtyp.com/model"
 	"webtyp.com/router"
-	"webtyp.com/rpc"
 )
 
 // MaxPage is the most rows one read call returns; the server caps every request to it (Cap).
@@ -19,8 +18,7 @@ const MaxAfter = 128
 const MaxID = 128
 
 // Cap is the limit a read operation must use: the asked limit, or MaxPage when it is missing or larger.
-//
-// Example: rows, err := m.readPatients(m.tenantID, args.Search, args.After, crud.Cap(args.Limit))
+// crud applies it automatically to ReadArgs.Limit.
 func Cap(limit int64) int64 {
 	if limit <= 0 || limit > MaxPage {
 		return MaxPage
@@ -31,7 +29,7 @@ func Cap(limit int64) int64 {
 // ReadArgs is what a read operation receives: an optional record ID for single-row lookup,
 // the search term ("" = no search), the id of the last row already shown ("" = from the start;
 // the server returns the rows after it in its own stable order) and how many rows to return.
-// MountRead decodes it and applies Cap(args.Limit) automatically.
+// Registry.Read decodes it and applies Cap(args.Limit) automatically.
 //
 // Example: var args crud.ReadArgs; if err := ctx.Decode(&args); err != nil { … }
 type ReadArgs struct {
@@ -39,6 +37,8 @@ type ReadArgs struct {
 	Search string
 	After  string
 	Limit  int64
+	// Filter is the entity's typed filter, nil when the entity declares none; decoded from the key "filter".
+	Filter model.Model
 }
 
 // ReadArgsModel is the wire schema of ReadArgs.
@@ -64,6 +64,9 @@ func (a *ReadArgs) EncodeFields(w model.FieldWriter) {
 	w.String("search", a.Search)
 	w.String("after", a.After)
 	w.Int("limit", a.Limit)
+	if a.Filter != nil {
+		w.Object(keyFilter, a.Filter)
+	}
 }
 
 func (a *ReadArgs) DecodeFields(r model.FieldReader) {
@@ -71,41 +74,48 @@ func (a *ReadArgs) DecodeFields(r model.FieldReader) {
 	a.Search, _ = r.String("search")
 	a.After, _ = r.String("after")
 	a.Limit, _ = r.Int("limit")
+	if a.Filter != nil {
+		r.Object(keyFilter, a.Filter)
+	}
 }
 
-// MountRead registers Op(m, model.Read) as the read operation of an entity:
-// it decodes ReadArgs, caps args.Limit to MaxPage via Cap, sanitizes Search, After and ID,
-// calls read(args) and encodes the returned ModelSlice.
-//
-//	crud.MountRead(reg, &Device{}, func(args crud.ReadArgs) (model.ModelSlice, error) {
-//		return m.ReadDevices(args.ID, args.Search, args.After, args.Limit)
-//	})
-func MountRead(reg router.OperationRegistry, m model.ModuleNaming, read func(args ReadArgs) (model.ModelSlice, error)) router.Route {
-	return mountOp(reg, m, model.Read, &ReadArgs{}, func(ctx router.Context) {
-		var args ReadArgs
+func (r *registry) Read(m model.ModuleNaming, newFilter func() model.Model, read func(c Caller, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route {
+	if m == nil || read == nil {
+		return r.fail(ErrNilFunction)
+	}
+	if m.ModelName() == "" {
+		return r.fail(ErrEmptyModelName)
+	}
+	h := func(ctx router.Context) {
+		args := ReadArgs{}
+		if newFilter != nil {
+			args.Filter = newFilter()
+		}
 		if err := ctx.Decode(&args); err != nil {
-			rpc.WriteError(ctx, ErrCannotRead)
+			router.WriteError(ctx, ErrCannotRead)
 			return
 		}
-		args.Limit = Cap(args.Limit)
-		if len(args.Search) > MaxSearch {
-			args.Search = args.Search[:MaxSearch]
+		if err := validateReadArgs(&args); err != nil {
+			router.WriteError(ctx, err)
+			return
 		}
-		if len(args.After) > MaxAfter {
-			args.After = args.After[:MaxAfter]
-		}
-		if len(args.ID) > MaxID {
-			args.ID = args.ID[:MaxID]
-		}
-		list, err := read(args)
+		list, err := read(callerOf(ctx), args, args.Filter)
 		if err != nil {
-			rpc.WriteError(ctx, err)
+			router.WriteError(ctx, err)
 			return
 		}
 		if enc, ok := list.(model.Encodable); ok {
 			if err := ctx.Encode(enc); err != nil {
-				rpc.WriteError(ctx, err)
+				router.WriteError(ctx, err)
 			}
 		}
-	})
+	}
+	rt := r.reg.Operation(Op(m, model.Read), h)
+	if r.isPublic(m.ModelName()) {
+		rt.Public()
+	} else {
+		rt.Requires(model.Resource(m.ModelName()), model.Read)
+	}
+	rt.Accepts(&ReadArgs{})
+	return route{rt}
 }

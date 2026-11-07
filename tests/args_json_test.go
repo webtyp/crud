@@ -6,8 +6,6 @@ import (
 	"webtyp.com/crud"
 	"webtyp.com/json"
 	"webtyp.com/model"
-	"webtyp.com/router"
-	"webtyp.com/router/loopback"
 )
 
 func TestArgsJSON_ExactFormat(t *testing.T) {
@@ -59,18 +57,18 @@ type argsCodecModule struct {
 }
 
 func (m *argsCodecModule) ModelName() string { return "argscodec" }
-func (m *argsCodecModule) MountOperations(reg router.OperationRegistry) {
-	crud.MountCreate(reg, func() model.ModelSlice { return &mockRecordList{} }, func(list model.ModelSlice) error {
+func (m *argsCodecModule) MountOperations(reg crud.Registry) {
+	reg.Create(func() model.ModelSlice { return &mockRecordList{} }, func(c crud.Caller, list model.ModelSlice) error {
 		m.savedRecs = append(m.savedRecs, *list.(*mockRecordList)...)
 		return nil
 	})
-	crud.MountUpdate(reg, func() model.Model { return &mockRecord{} }, func(ids, fields []string, rec model.Model) error {
+	reg.Update(func() model.Model { return &mockRecord{} }, func(c crud.Caller, ids, fields []string, rec model.Model) error {
 		m.patchedIDs = append(m.patchedIDs, ids...)
 		m.patchedFields = append(m.patchedFields, fields...)
 		m.patchedRec = *rec.(*mockRecord)
 		return nil
 	})
-	crud.MountDelete(reg, &mockRecord{}, func(ids []string) error {
+	reg.Delete(&mockRecord{}, func(c crud.Caller, ids []string) error {
 		m.deletedIDs = append(m.deletedIDs, ids...)
 		return nil
 	})
@@ -78,9 +76,9 @@ func (m *argsCodecModule) MountOperations(reg router.OperationRegistry) {
 
 func TestArgsJSON_LoopbackDecode(t *testing.T) {
 	mod := &argsCodecModule{}
-	c := loopback.ActingAs("tenant", "user", mod)
+	c := crud.LoopbackActingAs("user", mod)
 
-	// CreateArgs decoded through MountCreate (createIn)
+	// CreateArgs decoded through Create (createIn)
 	rec := &mockRecord{ID: "rec1", Name: "first"}
 	var out mockRecord
 	var err error
@@ -95,7 +93,7 @@ func TestArgsJSON_LoopbackDecode(t *testing.T) {
 		t.Fatalf("create returned unexpected record: %+v", out)
 	}
 
-	// UpdateArgs decoded through MountUpdate (updateIn): 1 ID / 1 field (fast-path)
+	// UpdateArgs decoded through Update (updateIn): 1 ID / 1 field (fast-path)
 	c.Call("argscodec."+crud.Op(&mockRecord{}, model.Update), &crud.UpdateArgs{
 		IDs:    []string{"id-1"},
 		Fields: []string{"name"},
@@ -108,7 +106,7 @@ func TestArgsJSON_LoopbackDecode(t *testing.T) {
 		t.Fatalf("updateIn did not decode single UpdateArgs properly: ids=%v fields=%v rec=%+v", mod.patchedIDs, mod.patchedFields, mod.patchedRec)
 	}
 
-	// DeleteArgs decoded through MountDelete (deleteIn): 1 ID (fast-path) and multiple IDs
+	// DeleteArgs decoded through Delete (deleteIn): 1 ID (fast-path) and multiple IDs
 	c.Call("argscodec."+crud.Op(&mockRecord{}, model.Delete), &crud.DeleteArgs{IDs: []string{"id-single"}}, nil, func(e error) { err = e })
 	if err != nil {
 		t.Fatalf("single delete call failed: %v", err)

@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"webtyp.com/model"
-	"webtyp.com/router"
 )
 
 const (
@@ -12,6 +11,7 @@ const (
 	keyIDs     = "ids"
 	keyFields  = "fields"
 	keyRecord  = "record"
+	keyFilter  = "filter"
 )
 
 // statusNoContent answers an update or delete: the client decodes nothing.
@@ -34,17 +34,6 @@ func Op(m model.ModuleNaming, action model.Action) string {
 	default:
 		return m.ModelName() + "_" + action.String()
 	}
-}
-
-// mountOp centralizes router registration, operation name resolution, authorization resource wiring,
-// and optional arg schema declaration for all CRUD operations.
-func mountOp(reg router.OperationRegistry, m model.ModuleNaming, action model.Action, accepts model.Fielder, h router.HandlerFunc) router.Route {
-	res := model.Resource(m.ModelName())
-	r := reg.Operation(Op(m, action), h).Requires(res, action)
-	if accepts != nil {
-		r.Accepts(accepts)
-	}
-	return r
 }
 
 func decodeStrings(r model.FieldReader, key string, one *[1]string) (out []string, tooMany bool, hasEmpty bool) {

@@ -6,8 +6,6 @@ import (
 
 	"webtyp.com/crud"
 	"webtyp.com/model"
-	"webtyp.com/router"
-	"webtyp.com/router/loopback"
 )
 
 type secRecord struct {
@@ -60,25 +58,25 @@ type secModule struct {
 }
 
 func (m *secModule) ModelName() string { return "secmod" }
-func (m *secModule) MountOperations(reg router.OperationRegistry) {
-	crud.MountCreate(reg, func() model.ModelSlice { return &secRecordList{} }, func(list model.ModelSlice) error {
+func (m *secModule) MountOperations(reg crud.Registry) {
+	reg.Create(func() model.ModelSlice { return &secRecordList{} }, func(c crud.Caller, list model.ModelSlice) error {
 		for _, r := range *list.(*secRecordList) {
 			m.created = append(m.created, r)
 		}
 		return nil
 	})
-	crud.MountRead(reg, &secRecord{}, func(args crud.ReadArgs) (model.ModelSlice, error) {
+	reg.Read(&secRecord{}, nil, func(c crud.Caller, args crud.ReadArgs, filter model.Model) (model.ModelSlice, error) {
 		m.lastRead = args
 		out := secRecordList{}
 		return &out, nil
 	})
-	crud.MountUpdate(reg, func() model.Model { return &secRecord{} }, func(ids, fields []string, rec model.Model) error {
+	reg.Update(func() model.Model { return &secRecord{} }, func(c crud.Caller, ids, fields []string, rec model.Model) error {
 		if m.patched != nil {
 			return m.patched(ids, fields, *rec.(*secRecord))
 		}
 		return nil
 	})
-	crud.MountDelete(reg, &secRecord{}, func(ids []string) error {
+	reg.Delete(&secRecord{}, func(c crud.Caller, ids []string) error {
 		m.deleted = append(m.deleted, ids...)
 		return nil
 	})
@@ -90,7 +88,7 @@ func secOp(action model.Action) string {
 
 func TestSecurity_BatchLimitExceeded(t *testing.T) {
 	mod := &secModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 
 	// 1. Create with 501 records (> MaxPage)
 	largeBatch := make([]model.Model, crud.MaxPage+1)
@@ -124,7 +122,7 @@ func TestSecurity_BatchLimitExceeded(t *testing.T) {
 
 func TestSecurity_ImmutableAndUnknownFields(t *testing.T) {
 	mod := &secModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 
 	// 1. Reject mutating "id"
 	var err error
@@ -173,7 +171,7 @@ func TestSecurity_ImmutableAndUnknownFields(t *testing.T) {
 
 func TestSecurity_InvalidOrEmptyIDs(t *testing.T) {
 	mod := &secModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 
 	// 1. Update with empty ID
 	var err error
@@ -218,7 +216,7 @@ func TestSecurity_InvalidOrEmptyIDs(t *testing.T) {
 
 func TestSecurity_CreateSchemaValidation(t *testing.T) {
 	mod := &secModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 
 	// secRecord Schema specifies title Maximum: 10
 	var err error
@@ -235,29 +233,26 @@ func TestSecurity_CreateSchemaValidation(t *testing.T) {
 
 func TestSecurity_SearchTermCapped(t *testing.T) {
 	mod := &secModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 
-	longSearch := strings.Repeat("a", 500)
+	longSearch := strings.Repeat("a", 257)
 	var err error
 	c.Call(secOp(model.Read), &crud.ReadArgs{
 		Search: longSearch,
-		Limit:  1000, // will also be capped to MaxPage
+		Limit:  1000,
 	}, nil, func(e error) { err = e })
 
-	if err != nil {
-		t.Fatalf("unexpected error on read with long search: %v", err)
+	if err == nil {
+		t.Fatalf("expected error on read with search > 256 bytes")
 	}
-	if len(mod.lastRead.Search) != crud.MaxSearch {
-		t.Fatalf("expected search length capped to %d, got %d", crud.MaxSearch, len(mod.lastRead.Search))
-	}
-	if mod.lastRead.Limit != crud.MaxPage {
-		t.Fatalf("expected limit capped to %d, got %d", crud.MaxPage, mod.lastRead.Limit)
+	if model.KindOf(err) != model.ErrorInvalid || !strings.Contains(err.Error(), "argument too long") {
+		t.Fatalf("expected invalid argument too long, got %v", err)
 	}
 }
 
 func TestSecurity_DuplicateIDs_Allowed(t *testing.T) {
 	mod := &secModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 
 	var err error
 	c.Call(secOp(model.Delete), &crud.DeleteArgs{
@@ -270,7 +265,7 @@ func TestSecurity_DuplicateIDs_Allowed(t *testing.T) {
 
 func TestSecurity_UpdateValueValidation(t *testing.T) {
 	mod := &secModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 
 	// Update with title violating Permitted Maximum: 10
 	var err error
@@ -286,23 +281,31 @@ func TestSecurity_UpdateValueValidation(t *testing.T) {
 
 func TestSecurity_CursorAndIDCapped(t *testing.T) {
 	mod := &secModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 
-	longAfter := strings.Repeat("x", 300)
-	longID := strings.Repeat("y", 300)
+	longID := strings.Repeat("y", 129)
 	var err error
 	c.Call(secOp(model.Read), &crud.ReadArgs{
-		ID:    longID,
+		ID: longID,
+	}, nil, func(e error) { err = e })
+
+	if err == nil {
+		t.Fatalf("expected error on read with ID > 128 bytes")
+	}
+	if model.KindOf(err) != model.ErrorInvalid || !strings.Contains(err.Error(), string(crud.ErrInvalidID)) {
+		t.Fatalf("expected ErrInvalidID, got %v", err)
+	}
+
+	longAfter := strings.Repeat("x", 129)
+	err = nil
+	c.Call(secOp(model.Read), &crud.ReadArgs{
 		After: longAfter,
 	}, nil, func(e error) { err = e })
 
-	if err != nil {
-		t.Fatalf("unexpected error on read: %v", err)
+	if err == nil {
+		t.Fatalf("expected error on read with After > 128 bytes")
 	}
-	if len(mod.lastRead.After) != crud.MaxAfter {
-		t.Fatalf("expected After capped to %d, got %d", crud.MaxAfter, len(mod.lastRead.After))
-	}
-	if len(mod.lastRead.ID) != crud.MaxID {
-		t.Fatalf("expected ID capped to %d, got %d", crud.MaxID, len(mod.lastRead.ID))
+	if model.KindOf(err) != model.ErrorInvalid || !strings.Contains(err.Error(), "argument too long") {
+		t.Fatalf("expected invalid argument too long, got %v", err)
 	}
 }

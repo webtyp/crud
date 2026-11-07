@@ -1,16 +1,6 @@
 webtyp.com/escape v0.1.0 h1:LvAiviOM15TUiJBUK4CO7TLp3oAQ+GoKunaVTVKsklA=
 webtyp.com/escape v0.1.0/go.mod h1:77ZTqob2u8NA2FUu723FzajXwcTk4ddlWWLXtKyOfO4=
-webtyp.com/fetch v0.1.29 h1:BC47L9IHjs3/ZghpoFRtjBfzDFtKA53464z228Gt/Ts=
-webtyp.com/fetch v0.1.29/go.mod h1:vyqENpBzRHNJOsJVrTYXEGApywiNCnJYwiqtBQ8nivQ=
-webtyp.com/filepath v0.1.0 h1:1bkd62WxcHbhud2JaEl+l1udhTgOIYlDbEtcEMru8eQ=
-webtyp.com/filepath v0.1.0/go.mod h1:xwgvCdxWly3B35IUgYt0RaI4LFpHmR7W9cCm+P4cQ7E=
 webtyp.com/fmt v1.0.0 h1:W0vMMGC6ezg1q2LarAEaVnNvZ26hVqzZdQQH1wcNogM=
 webtyp.com/fmt v1.0.0/go.mod h1:FmTxx713R45J21kbH5JOmKGaaCap3fJPA9Yl2n4Ch7U=
 webtyp.com/json v0.5.40 h1:BJEHKXXbTlnHeanhKxDnJ4e7BJC316yIX/JI6pSYzJs=
 webtyp.com/json v0.5.40/go.mod h1:zgWKICAsMIQzDo0GAbbZ/eAb9gM2oZcQqY130XR+QXw=
-webtyp.com/model v0.2.13 h1:Zf9kFEy663Yd8ZyWPSXlHF866nZnSPU+rUFinm7z9A0=
-webtyp.com/model v0.2.13/go.mod h1:OkyYeE3GOG8eAQGhd9wVsORAhr+xYj3q8avpoGXG25c=
-webtyp.com/router v0.4.17 h1:7aox2cih3c6qBAifZDjxzIQ4FOqVieaqdrlndFW1Ynk=
-webtyp.com/router v0.4.17/go.mod h1:LLQCn9sAWMGdkYr1OZZfoQTR3p8fjOV94JevlcHDYqE=
-webtyp.com/rpc v0.2.15 h1:8NWS0SFjwqm1vr+9Rk992dHwn2Pse5t6sosJlJNb6us=
-webtyp.com/rpc v0.2.15/go.mod h1:0eOuo2ZC1Hem8sLprqsx/mJO5GssBJNB4DLZZINInrw=

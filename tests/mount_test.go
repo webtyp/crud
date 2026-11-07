@@ -6,8 +6,6 @@ import (
 
 	"webtyp.com/crud"
 	"webtyp.com/model"
-	"webtyp.com/router"
-	"webtyp.com/router/loopback"
 )
 
 type mockRecord struct {
@@ -54,25 +52,50 @@ func (s *mockRecordList) DecodeFields(_ model.FieldReader) {}
 
 type testModule struct {
 	store  map[string]*mockRecord
-	create func(list mockRecordList) error
-	read   func(args crud.ReadArgs) (mockRecordList, error)
-	patch  func(ids, fields []string, rec mockRecord) error
-	remove func(ids []string) error
+	create func(c crud.Caller, list mockRecordList) error
+	read   func(c crud.Caller, args crud.ReadArgs, filter model.Model) (mockRecordList, error)
+	patch  func(c crud.Caller, ids, fields []string, rec mockRecord) error
+	remove func(c crud.Caller, ids []string) error
 }
 
 func (m *testModule) ModelName() string { return "testmod" }
-func (m *testModule) MountOperations(reg router.OperationRegistry) {
-	crud.MountCreate(reg, func() model.ModelSlice { return &mockRecordList{} }, func(list model.ModelSlice) error {
-		return m.create(*list.(*mockRecordList))
-	})
-	crud.MountRead(reg, &mockRecord{}, func(args crud.ReadArgs) (model.ModelSlice, error) {
-		out, err := m.read(args)
-		return &out, err
-	})
-	crud.MountUpdate(reg, func() model.Model { return &mockRecord{} }, func(ids, fields []string, rec model.Model) error {
-		return m.patch(ids, fields, *rec.(*mockRecord))
-	})
-	crud.MountDelete(reg, &mockRecord{}, m.remove)
+func (m *testModule) MountOperations(reg crud.Registry) {
+	if m.create != nil {
+		reg.Create(func() model.ModelSlice { return &mockRecordList{} }, func(c crud.Caller, list model.ModelSlice) error {
+			return m.create(c, *list.(*mockRecordList))
+		})
+	} else {
+		reg.Create(func() model.ModelSlice { return &mockRecordList{} }, func(c crud.Caller, list model.ModelSlice) error {
+			return nil
+		})
+	}
+	if m.read != nil {
+		reg.Read(&mockRecord{}, nil, func(c crud.Caller, args crud.ReadArgs, filter model.Model) (model.ModelSlice, error) {
+			out, err := m.read(c, args, filter)
+			return &out, err
+		})
+	} else {
+		reg.Read(&mockRecord{}, nil, func(c crud.Caller, args crud.ReadArgs, filter model.Model) (model.ModelSlice, error) {
+			out := mockRecordList{}
+			return &out, nil
+		})
+	}
+	if m.patch != nil {
+		reg.Update(func() model.Model { return &mockRecord{} }, func(c crud.Caller, ids, fields []string, rec model.Model) error {
+			return m.patch(c, ids, fields, *rec.(*mockRecord))
+		})
+	} else {
+		reg.Update(func() model.Model { return &mockRecord{} }, func(c crud.Caller, ids, fields []string, rec model.Model) error {
+			return nil
+		})
+	}
+	if m.remove != nil {
+		reg.Delete(&mockRecord{}, m.remove)
+	} else {
+		reg.Delete(&mockRecord{}, func(c crud.Caller, ids []string) error {
+			return nil
+		})
+	}
 }
 
 func opName(action model.Action) string {
@@ -91,13 +114,13 @@ func TestOp_HasNoDotsForRPCCallerCompatibility(t *testing.T) {
 	}
 }
 
-func TestMountCreate_RoundTripAndTransactionalBatch(t *testing.T) {
+func TestCreate_RoundTripAndTransactionalBatch(t *testing.T) {
 	var calls int
 	var savedOrder []string
 	mod := &testModule{
 		store: make(map[string]*mockRecord),
 	}
-	mod.create = func(list mockRecordList) error {
+	mod.create = func(c crud.Caller, list mockRecordList) error {
 		calls++
 		// Single atomic transaction check across the whole batch before committing:
 		for _, d := range list {
@@ -114,7 +137,7 @@ func TestMountCreate_RoundTripAndTransactionalBatch(t *testing.T) {
 		}
 		return nil
 	}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 
 	// 1. Failing record in batch rolls back the entire batch (0 records stored)
 	var err error
@@ -159,9 +182,9 @@ func TestMountCreate_RoundTripAndTransactionalBatch(t *testing.T) {
 	}
 }
 
-func TestMountCreate_EmptyIs400(t *testing.T) {
+func TestCreate_EmptyIs400(t *testing.T) {
 	mod := &testModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	var err error
 	c.Call(opName(model.Create), &crud.CreateArgs{}, nil, func(e error) { err = e })
 
@@ -173,10 +196,10 @@ func TestMountCreate_EmptyIs400(t *testing.T) {
 	}
 }
 
-func TestMountRead_RoundTripAndCapsLimit(t *testing.T) {
+func TestRead_RoundTripAndCapsLimit(t *testing.T) {
 	var gotArgs crud.ReadArgs
 	mod := &testModule{
-		read: func(args crud.ReadArgs) (mockRecordList, error) {
+		read: func(c crud.Caller, args crud.ReadArgs, filter model.Model) (mockRecordList, error) {
 			gotArgs = args
 			return mockRecordList{
 				{ID: "1", Name: "Alpha"},
@@ -184,7 +207,7 @@ func TestMountRead_RoundTripAndCapsLimit(t *testing.T) {
 			}, nil
 		},
 	}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	var out mockRecordList
 	var err error
 	c.Call(opName(model.Read), &crud.ReadArgs{ID: "1", Search: "Al", After: "0", Limit: 9999}, &out, func(e error) { err = e })
@@ -200,15 +223,15 @@ func TestMountRead_RoundTripAndCapsLimit(t *testing.T) {
 	}
 }
 
-func TestMountDelete_RoundTrip(t *testing.T) {
+func TestDelete_RoundTrip(t *testing.T) {
 	var deletedIDs []string
 	mod := &testModule{
-		remove: func(ids []string) error {
+		remove: func(c crud.Caller, ids []string) error {
 			deletedIDs = append(deletedIDs, ids...)
 			return nil
 		},
 	}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	var err error
 	c.Call(opName(model.Delete), &crud.DeleteArgs{IDs: []string{"1", "2"}}, nil, func(e error) { err = e })
 
@@ -221,9 +244,9 @@ func TestMountDelete_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestMountDelete_EmptyIs400(t *testing.T) {
+func TestDelete_EmptyIs400(t *testing.T) {
 	mod := &testModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	var err error
 	c.Call(opName(model.Delete), &crud.DeleteArgs{}, nil, func(e error) { err = e })
 
@@ -235,18 +258,18 @@ func TestMountDelete_EmptyIs400(t *testing.T) {
 	}
 }
 
-func TestMountUpdate_RoundTrip(t *testing.T) {
+func TestUpdate_RoundTrip(t *testing.T) {
 	var gotIDs, gotFields []string
 	var gotRec mockRecord
 	mod := &testModule{
-		patch: func(ids, fields []string, rec mockRecord) error {
+		patch: func(c crud.Caller, ids, fields []string, rec mockRecord) error {
 			gotIDs = append(gotIDs, ids...)
 			gotFields = append(gotFields, fields...)
 			gotRec = rec
 			return nil
 		},
 	}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	var err error
 	c.Call(opName(model.Update), &crud.UpdateArgs{
 		IDs:    []string{"1", "2"},
@@ -268,9 +291,9 @@ func TestMountUpdate_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestMountUpdate_EmptyIs400(t *testing.T) {
+func TestUpdate_EmptyIs400(t *testing.T) {
 	mod := &testModule{}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	var err error
 	c.Call(opName(model.Update), &crud.UpdateArgs{Fields: []string{"name"}, Record: &mockRecord{}}, nil, func(e error) { err = e })
 	if err == nil || model.KindOf(err) != model.ErrorInvalid || !strings.Contains(err.Error(), string(crud.ErrNoIDs)) {
@@ -284,13 +307,13 @@ func TestMountUpdate_EmptyIs400(t *testing.T) {
 	}
 }
 
-func TestMountUpdate_ErrorKeepsItsStatus(t *testing.T) {
+func TestUpdate_ErrorKeepsItsStatus(t *testing.T) {
 	mod := &testModule{
-		patch: func(ids, fields []string, rec mockRecord) error {
+		patch: func(c crud.Caller, ids, fields []string, rec mockRecord) error {
 			return model.Conflict("locked")
 		},
 	}
-	c := loopback.ActingAs("t", "u", mod)
+	c := crud.LoopbackActingAs("u", mod)
 	var err error
 	c.Call(opName(model.Update), &crud.UpdateArgs{
 		IDs:    []string{"1"},

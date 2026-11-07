@@ -3,10 +3,9 @@ package crud
 import (
 	"webtyp.com/model"
 	"webtyp.com/router"
-	"webtyp.com/rpc"
 )
 
-// UpdateArgs is what a client sends to patch fields (and what MountUpdate decodes on the server):
+// UpdateArgs is what a client sends to patch fields (and what Update decodes on the server):
 // which rows, which columns, and a record carrying the values.
 //
 // Example: caller.Call(crud.Op(&Device{}, model.Update), &crud.UpdateArgs{IDs: ids, Fields: fields, Record: rec}, nil, done)
@@ -50,34 +49,36 @@ func (a *UpdateArgs) DecodeFields(r model.FieldReader) {
 	}
 }
 
-// MountUpdate registers Op(sample, model.Update) as the field-patch operation of an entity:
-// it reads the ids, field names and carrier record sent in {"ids":[…],"fields":[…],"record":{…}}
-// and calls update(ids, fields, rec) once. No ids or no fields → 400.
-//
-//	crud.MountUpdate(reg, func() model.Model { return &Device{} }, func(ids, fields []string, rec model.Model) error {
-//		return m.UpdateDevices(ids, fields, *rec.(*Device))
-//	})
-func MountUpdate(reg router.OperationRegistry, newRecord func() model.Model, update func(ids, fields []string, rec model.Model) error) router.Route {
+func (r *registry) Update(newRecord func() model.Model, update func(c Caller, ids, fields []string, rec model.Model) error) Route {
+	if newRecord == nil || update == nil {
+		return r.fail(ErrNilFunction)
+	}
 	sample := newRecord()
+	if sample.ModelName() == "" {
+		return r.fail(ErrEmptyModelName)
+	}
 	schema := sample.Schema()
-	return mountOp(reg, sample, model.Update, sample, func(ctx router.Context) {
+	h := func(ctx router.Context) {
 		in := UpdateArgs{Record: newRecord()}
 		if err := ctx.Decode(&in); err != nil {
-			rpc.WriteError(ctx, ErrCannotRead)
+			router.WriteError(ctx, ErrCannotRead)
 			return
 		}
 		if err := validateIDs(in.IDs, in.hasEmpty, in.tooMany); err != nil {
-			rpc.WriteError(ctx, err)
+			router.WriteError(ctx, err)
 			return
 		}
 		if err := validateUpdateFields(schema, in.Fields, in.Record); err != nil {
-			rpc.WriteError(ctx, err)
+			router.WriteError(ctx, err)
 			return
 		}
-		if err := update(in.IDs, in.Fields, in.Record); err != nil {
-			rpc.WriteError(ctx, err)
+		if err := update(callerOf(ctx), in.IDs, in.Fields, in.Record); err != nil {
+			router.WriteError(ctx, err)
 			return
 		}
 		ctx.WriteStatus(statusNoContent)
-	})
+	}
+	rt := r.reg.Operation(Op(sample, model.Update), h).Requires(model.Resource(sample.ModelName()), model.Update)
+	rt.Accepts(sample)
+	return route{rt}
 }

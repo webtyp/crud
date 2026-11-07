@@ -28,9 +28,46 @@ func validateIDs(ids []string, hasEmpty, tooMany bool) error {
 	return nil
 }
 
+// validateReadArgs rejects oversized arguments (never truncates them), caps the limit
+// and validates the typed filter against its schema.
+func validateReadArgs(a *ReadArgs) error {
+	if len(a.ID) > MaxID {
+		return ErrInvalidID
+	}
+	if len(a.Search) > MaxSearch || len(a.After) > MaxAfter {
+		return ErrArgTooLong
+	}
+	a.Limit = Cap(a.Limit)
+	if a.Filter == nil {
+		return nil
+	}
+	return model.ValidateInput(model.ActionCreate, a.Filter)
+}
+
+func serverOnlyWritten(schema []model.Field, rec model.Fielder) bool {
+	ptrs := rec.Pointers()
+	for i := range schema {
+		if !schema[i].ServerOnly {
+			continue
+		}
+		ft := schema[i].Type.Storage()
+		switch ft {
+		case model.FieldText, model.FieldRaw:
+			if v, _ := model.ReadStringPtr(ptrs[i]); v != "" {
+				return true
+			}
+		default:
+			if !model.IsZeroPtr(ptrs[i], ft) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // validateCreateBatch checks batch size limits and executes declarative schema validation
 // on every record in the batch prior to database persistence.
-func validateCreateBatch(list model.ModelSlice, tooMany bool) error {
+func validateCreateBatch(schema []model.Field, list model.ModelSlice, tooMany bool) error {
 	if tooMany || list.Len() > MaxPage {
 		return ErrBatchTooLarge
 	}
@@ -39,11 +76,10 @@ func validateCreateBatch(list model.ModelSlice, tooMany bool) error {
 	}
 	for i := 0; i < list.Len(); i++ {
 		elem := list.At(i)
-		if v, ok := elem.(model.Validator); ok {
-			if err := v.Validate(model.ActionCreate); err != nil {
-				return err
-			}
-		} else if err := model.ValidateFields(model.ActionCreate, elem); err != nil {
+		if serverOnlyWritten(schema, elem) {
+			return ErrServerOnlyField
+		}
+		if err := model.ValidateInput(model.ActionCreate, elem); err != nil {
 			return err
 		}
 	}
@@ -80,6 +116,9 @@ func validateUpdateFields(schema []model.Field, fields []string, rec model.Model
 		field := &schema[idx]
 		if field.IsPK() {
 			return ErrInvalidField
+		}
+		if field.ServerOnly {
+			return ErrServerOnlyField
 		}
 		ft := field.Type.Storage()
 		switch ft {
