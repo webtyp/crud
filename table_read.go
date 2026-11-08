@@ -112,9 +112,12 @@ func readHandler(t Table, schema []model.Field) func(ctx router.Context) {
 		list := t.NewList()
 
 		err := t.Store.ReadAll(
-			func() model.Model { return list.Append().(model.Model) },
+			func() model.Model { return t.NewList().Append().(model.Model) },
 			q,
-			func(m model.Model) {},
+			func(m model.Model) {
+				row := list.Append().(model.Model)
+				copyRow(m, row)
+			},
 		)
 
 		if err != nil {
@@ -126,6 +129,37 @@ func readHandler(t Table, schema []model.Field) func(ctx router.Context) {
 			if err := ctx.Encode(enc); err != nil {
 				router.WriteError(ctx, err)
 			}
+		}
+	}
+}
+
+func copyRow(src, dst model.Model) {
+	srcPtrs := src.Pointers()
+	dstPtrs := dst.Pointers()
+	for i := range srcPtrs {
+		switch s := srcPtrs[i].(type) {
+		case *string:
+			*dstPtrs[i].(*string) = *s
+		case *int64:
+			*dstPtrs[i].(*int64) = *s
+		case *int:
+			*dstPtrs[i].(*int) = *s
+		case *bool:
+			*dstPtrs[i].(*bool) = *s
+		case *float64:
+			*dstPtrs[i].(*float64) = *s
+		case *float32:
+			*dstPtrs[i].(*float32) = *s
+		case *[]string:
+			*dstPtrs[i].(*[]string) = *s
+		case *[]int:
+			*dstPtrs[i].(*[]int) = *s
+		case *[]int64:
+			*dstPtrs[i].(*[]int64) = *s
+		case *[]float64:
+			*dstPtrs[i].(*[]float64) = *s
+		case *[]byte:
+			*dstPtrs[i].(*[]byte) = *s
 		}
 	}
 }
