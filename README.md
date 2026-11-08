@@ -48,13 +48,13 @@ func TestDeviceOps(t *testing.T) {
 
 | Document | Purpose |
 |---|---|
-| [`contract.go`](contract.go) | Public interfaces: `Module`, `Registry`, `Route`, `Caller` |
+| [`contract.go`](contract.go) | Public interfaces: `Module`, `Registry`, `Route`, `Caller`, `Table`, `Store`, `Tx` |
+| [`table.go`](table.go) | Engine mounting `crud.Table` operations for allowed actions |
+| [`store.go`](store.go) | `Store`, `Tx` persistence interfaces and transaction capabilities |
 | [`mount.go`](mount.go) | `crud.Mount` implementation for transports (rpc, mcp, dbsync) |
-| [`create.go`](create.go) | `CreateArgs` and `Registry.Create` |
-| [`read.go`](read.go) | `ReadArgs`, `Cap`, `MaxPage`, and `Registry.Read` |
-| [`update.go`](update.go) | `UpdateArgs` and `Registry.Update` |
-| [`delete.go`](delete.go) | `DeleteArgs` and `Registry.Delete` |
+| [`read.go`](read.go) | `ReadArgs`, `Cap`, `MaxPage`, and `Registry.Read` for report/wire models |
 | [`validate.go`](validate.go) | Centralized input and security boundary validation |
 | [`loopback.go`](loopback.go) | In-process `crud.Loopback` and `crud.LoopbackActingAs` |
+| [`storetest/`](storetest/storetest.go) | Conformance test suite for `crud.Store` implementations |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Architectural layout and request flow |
 | [`docs/TESTS.md`](docs/TESTS.md) | Test suite map |
