@@ -21,7 +21,7 @@ const (
 // passes public). The first wiring mistake is returned and the transport must not serve.
 //
 //	if err := crud.Mount(reg, nil, patients); err != nil { return err }
-func Mount(reg router.OperationRegistry, public []model.ModuleNaming, m Module) error {
+func Mount(reg router.OperationRegistry, public []Public, m Module) error {
 	r := &registry{reg: reg, public: public}
 	m.MountOperations(r)
 	return r.err
@@ -29,7 +29,7 @@ func Mount(reg router.OperationRegistry, public []model.ModuleNaming, m Module) 
 
 type registry struct {
 	reg    router.OperationRegistry
-	public []model.ModuleNaming
+	public []Public
 	err    error
 }
 
@@ -40,9 +40,9 @@ func (r *registry) fail(err error) Route {
 	return noRoute{}
 }
 
-func (r *registry) isPublic(name string) bool {
+func (r *registry) isPublic(name string, action model.Action) bool {
 	for _, p := range r.public {
-		if p.ModelName() == name {
+		if p.Model.ModelName() == name && p.Actions.Has(action) {
 			return true
 		}
 	}

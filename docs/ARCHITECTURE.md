@@ -4,21 +4,17 @@
 
 The CRUD architecture enforces a closed, declarative boundary between transports and domain logic:
 
+```mermaid
+flowchart TD
+    Transport[Transport / Loopback] --> Mount[crud.Mount]
+    Mount --> Registry[crud.Registry]
+    Registry --> Validate[validate.go\nID limits, ServerOnly, model.ValidateInput]
+    Validate --> TableEngine[Table Engine\nCreate/Update/Delete/Read]
+    TableEngine --> Hooks[Module Hooks]
+    TableEngine --> Store[crud.Store\nPersistence]
 ```
-[Transport / Loopback]
-       │
-       ▼
-   crud.Mount(reg, publicReads, module)
-       │
-       ▼
-  crud.Registry (Create, Read, Update, Delete)
-       │
-       ▼
-    validate.go (ID limits, ServerOnly enforcement, model.ValidateInput)
-       │
-       ▼
-   Module Handlers (receiving crud.Caller)
-```
+
+**Rule R1**: Every condition passed to a `Store` has `Logic() == "AND"`. Conditions are not grouped (evaluated left to right); an `OR` would turn `tenant = X AND a OR b` into a cross-tenant read.
 
 1. **Closed Contract:** A domain module only receives `crud.Registry`. It has no access to transport-specific abstractions (`router.Context`, raw routes, or query strings).
 2. **Standardized Operations:** Operation names (`Op(m, action)`) are strictly derived as `<ModelName>_<action>` (e.g., `patient_c`, `patient_r`, `patient_u`, `patient_d`).

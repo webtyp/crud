@@ -11,6 +11,9 @@ SESSION: 7346834124478764260
 > proceed or finalize — nobody answers, and a session that waits ends without your work. Commit after every stage.
 > Never run `git reset`, `git restore`, `git checkout -- <file>` or `git stash` on your own work.
 
+## Executor notes
+`go doc webtyp.com/model Allower` fails. Stopped execution as per PLAN.md instructions.
+
 # Plan: `crud` persists a table; a module declares it and writes only domain rules
 
 ## Tools
