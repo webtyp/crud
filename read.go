@@ -111,7 +111,7 @@ func (r *registry) Read(m model.ModuleNaming, newFilter func() model.Model, read
 		}
 	}
 	rt := r.reg.Operation(Op(m, model.Read), h)
-	if r.isPublic(m.ModelName()) {
+	if r.isPublic(m.ModelName(), model.Read) {
 		rt.Public()
 	} else {
 		rt.Requires(model.Resource(m.ModelName()), model.Read)

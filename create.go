@@ -2,7 +2,6 @@ package crud
 
 import (
 	"webtyp.com/model"
-	"webtyp.com/router"
 )
 
 // CreateArgs is what a client sends to a create operation: whole records, persisted in one transactional batch.
@@ -45,35 +44,3 @@ func (c *createIn) DecodeFields(r model.FieldReader) {
 	}
 }
 
-func (r *registry) Create(newList func() model.ModelSlice, create func(c Caller, list model.ModelSlice) error) Route {
-	if newList == nil || create == nil {
-		return r.fail(ErrNilFunction)
-	}
-	sample := newList().Append().(model.Model)
-	if sample.ModelName() == "" {
-		return r.fail(ErrEmptyModelName)
-	}
-	schema := sample.Schema()
-	h := func(ctx router.Context) {
-		in := createIn{list: newList()}
-		if err := ctx.Decode(&in); err != nil {
-			router.WriteError(ctx, ErrCannotRead)
-			return
-		}
-		if err := validateCreateBatch(schema, in.list, in.tooMany); err != nil {
-			router.WriteError(ctx, err)
-			return
-		}
-		if err := create(callerOf(ctx), in.list); err != nil {
-			router.WriteError(ctx, err)
-			return
-		}
-		last := in.list.At(in.list.Len() - 1).(model.Encodable)
-		if err := ctx.Encode(last); err != nil {
-			router.WriteError(ctx, err)
-		}
-	}
-	rt := r.reg.Operation(Op(sample, model.Create), h).Requires(model.Resource(sample.ModelName()), model.Create)
-	rt.Accepts(sample)
-	return route{rt}
-}

@@ -9,4 +9,9 @@ require (
 	webtyp.com/router v0.4.19
 )
 
-require webtyp.com/escape v0.1.0 // indirect
+require (
+	webtyp.com/calendar v0.1.0 // indirect
+	webtyp.com/escape v0.1.0 // indirect
+	webtyp.com/storage v0.1.18 // indirect
+	webtyp.com/time v0.6.4 // indirect
+)

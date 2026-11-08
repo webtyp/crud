@@ -2,7 +2,6 @@ package crud
 
 import (
 	"webtyp.com/model"
-	"webtyp.com/router"
 )
 
 // UpdateArgs is what a client sends to patch fields (and what Update decodes on the server):
@@ -49,36 +48,3 @@ func (a *UpdateArgs) DecodeFields(r model.FieldReader) {
 	}
 }
 
-func (r *registry) Update(newRecord func() model.Model, update func(c Caller, ids, fields []string, rec model.Model) error) Route {
-	if newRecord == nil || update == nil {
-		return r.fail(ErrNilFunction)
-	}
-	sample := newRecord()
-	if sample.ModelName() == "" {
-		return r.fail(ErrEmptyModelName)
-	}
-	schema := sample.Schema()
-	h := func(ctx router.Context) {
-		in := UpdateArgs{Record: newRecord()}
-		if err := ctx.Decode(&in); err != nil {
-			router.WriteError(ctx, ErrCannotRead)
-			return
-		}
-		if err := validateIDs(in.IDs, in.hasEmpty, in.tooMany); err != nil {
-			router.WriteError(ctx, err)
-			return
-		}
-		if err := validateUpdateFields(schema, in.Fields, in.Record); err != nil {
-			router.WriteError(ctx, err)
-			return
-		}
-		if err := update(callerOf(ctx), in.IDs, in.Fields, in.Record); err != nil {
-			router.WriteError(ctx, err)
-			return
-		}
-		ctx.WriteStatus(statusNoContent)
-	}
-	rt := r.reg.Operation(Op(sample, model.Update), h).Requires(model.Resource(sample.ModelName()), model.Update)
-	rt.Accepts(sample)
-	return route{rt}
-}
