@@ -2,6 +2,8 @@
 PLAN: "feat!: crud persists tables — Registry.Table with Store/Tx, per-record hooks, composite keys, public actions; Create/Update/Delete leave Registry"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 7346834124478764260
 ---
 
 > Read AGENTS.md at the repo root before any change.
