@@ -2,8 +2,10 @@
 PLAN: "feat!: crud persists tables — Registry.Table with Store/Tx, per-record hooks, composite keys, public actions; Create/Update/Delete leave Registry"
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 7346834124478764260
+PR: https://github.com/webtyp/crud/pull/1
+REVIEWED_COMMIT: 0668588957bff0d778f162a23414195c3801a376
 ---
 
 > Read AGENTS.md at the repo root before any change.
