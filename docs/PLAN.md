@@ -1,379 +1,346 @@
 ---
-PLAN: "feat!: closed contract — crud.Module, crud.Registry, crud.Route, crud.Caller, typed read filter, ServerOnly, crud.Loopback"
-EXECUTOR: antigravity
+PLAN: "feat!: crud persists tables — Registry.Table with Store/Tx, per-record hooks, composite keys, public actions; Create/Update/Delete leave Registry"
+EXECUTOR: jules
 REVIEWER: none
 ---
 
 > Read AGENTS.md at the repo root before any change.
-> **Finish by yourself:** when the delivery check passes, commit after every stage and stop. Never ask whether to
-> proceed. This plan runs **locally**: do not tag, push or publish anything; the owner reviews first.
+> **Finish by yourself:** when the delivery check passes, commit, push and open the pull request. Never ask whether to
+> proceed or finalize — nobody answers, and a session that waits ends without your work. Commit after every stage.
 > Never run `git reset`, `git restore`, `git checkout -- <file>` or `git stash` on your own work.
 
-# Plan: the closed CRUD contract
-
-Context (master `webtyp/docs/ARCHITECTURE_MASTER_PLAN.md`, decisions D5–D14; diagram
-`webtyp/docs/diagrams/TRANSPORT_CRUD_ARCHITECTURE.md`): today a module receives `router.OperationRegistry` and can
-register any handler, read `args.TenantId` from the client (IDOR) or chain `.Public()`. After this plan a module
-receives **only** `crud.Registry` (4 methods), gets a `crud.Route` with no `Public`/`Authenticated`/`Requires`, learns
-who calls through `crud.Caller`, and every request goes through `validate.go`. Transports (rpc, mcp, dbsync, the
-loopback) call `crud.Mount`.
+# Plan: `crud` persists a table; a module declares it and writes only domain rules
 
 ## Tools
 
 ```bash
 go install webtyp.com/devflow/cmd/gotest@latest
+go install webtyp.com/lang/cmd/langc@latest
+go get webtyp.com/model@latest webtyp.com/storage@v0.1.18 webtyp.com/time@latest
 ```
-Local `replace` in `go.mod` (do not remove them; publishing does):
-```
-replace webtyp.com/model => ../model
-replace webtyp.com/router => ../router
-```
-Remove `webtyp.com/rpc` from `go.mod` (`go mod tidy`). Environment: `GOPRIVATE=webtyp.com/*,github.com/veltylabs/*`, `GOFLAGS=-mod=mod`.
+`model@latest` must contain `model.Allower` and `Definition.Allow` (plan A6.1); if `go doc webtyp.com/model Allower` fails,
+stop and say so in the PR. No `replace` in `go.mod`. `crud` must **not** import `webtyp.com/orm` (orm implements `crud.Store`
+in the next plan; `grep -rn "webtyp.com/orm" .` → empty).
+
+## Why
+
+Today `Registry.Create/Read/Update/Delete` hand each module a raw list, and every module re-writes the same mechanics:
+id, tenant, timestamps, schema validation, a loop inside a transaction, tenant-scoped update/delete, partial update by
+`fields`. Measured in `veltylabs/modules/editorial/crud.go` (226 lines): `UpdatePost` writes the whole record ignoring
+`fields` (it blanks `author_id` and `title`), reads outside the transaction, repeats the schema validation; four
+operations that must not exist are mounted and answer `"not supported"`. The tenant filter written by hand in every
+function is what produced the IDOR in `patient_directory`. Decisions D19 and D20 of
+`webtyp/docs/ARCHITECTURE_MASTER_PLAN.md`: `crud` persists; the module declares what a table allows and writes
+per-record hooks. `ormc` (next plan) generates the typed `Mount<Entity>` that builds a `crud.Table`.
+
+## Ecosystem search
+
+- `crud` today: `create.go`, `update.go`, `delete.go`, `read.go`, `validate.go` (decode, `validateCreateBatch`,
+  `validateUpdateFields`, `validateIDs`, `validateReadArgs`, `ServerOnly`) — **reused** by the new engine.
+- `orm.DB` (`Tx`, `Create`, `UpdateFields`, `Delete`, `Query`/`ReadAll`) — the methods `crud.Tx` mirrors by name, so
+  `orm` implements it with a thin adapter (plan A6.3). `crud` declares the contract (api-harness rule 9).
+- `storage.Condition` (`storage v0.1.18`) — reused for conditions. **It has no grouping**: conditions are evaluated left
+  to right (`storage/mem/mem.go:311`); an `OR` would turn `tenant = X AND a OR b` into a cross-tenant read. Hence rule R1 below.
+
+## Design gate
+
+1. **Prior art:** Django `ModelAdmin.save_model`/`Model.clean` (https://docs.djangoproject.com/en/5.1/ref/contrib/admin/#django.contrib.admin.ModelAdmin.save_model),
+   Rails callbacks (https://guides.rubyonrails.org/active_record_callbacks.html), Spring Data REST event handlers
+   (https://docs.spring.io/spring-data/rest/reference/events.html). The framework persists; the application plugs rules
+   per record. Same here, without generics: the typed hooks are produced by `ormc`.
+2. **Names:** `Registry.Table`, `crud.Table`, `crud.Store`, `crud.Tx` with the words `orm` already uses (`ReadOne`,
+   `ReadAll`, `Create`, `UpdateFields`, `Delete`, `Tx`). Hooks named by the action they guard (`Create`, `Update`, `Delete`),
+   plus `Search`, `NewFilter`, `Committed`.
+3. **Ledger:** concepts +3 (`Table`, `Store`, `Tx`) −4 (`Registry.Create/Update/Delete` + their adapters); lines at a module's
+   call site −150 to −250 per module; ways to do the same thing −1 (no hand-written persistence path left for tables).
+4. **Where:** `crud` already owns the operation contract and its validation.
+5. **Deletes:** `Registry.Create`, `Registry.Update`, `Registry.Delete` (and their handlers' registry methods);
+   `Route.Describe` for tables (descriptions come from the model and action).
 
 ## APIs used
 
-| Symbol | Signature | Where |
+| Symbol | Signature | Tag |
 |---|---|---|
-| `router.OperationRegistry` | `interface{ Operation(name string, h HandlerFunc) Route }` | router `router.go:192` |
-| `router.Route` | `Requires(model.Resource, model.Action) Route; Authenticated() Route; Public() Route; RequiresMFA() Route; Accepts(model.Fielder) Route; Describe(string) Route` | router `route.go` |
-| `router.Context.UserID` | `UserID() string` | router `router.go:16` |
-| `router.WriteError` | `func WriteError(ctx Context, err error)` | router (local, router plan stage 1) |
-| `router.Caller` | `Call(op string, args model.Encodable, into model.Decodable, done func(error)); Dispatch(op string, args model.Encodable)` | router `caller.go` |
-| `router.Problem`, `router.KindOfStatus` | see router `problem.go` | |
-| `model.Field.ServerOnly` | `bool` | model (local, A0) |
-| `model.Model`, `model.ModelSlice`, `model.ModuleNaming`, `model.Fielder` | `webtyp/model/interface.go` | |
-| `model.Resource(name)`, `model.Read/Create/Update/Delete` | | model `rbac.go` |
-| `model.ReadStringPtr`, `model.IsZeroPtr`, `model.ActionCreate` | used today in `validate.go` | |
-| `model.ValidateInput` | `func ValidateInput(action byte, f Fielder) error` — `ValidateFields` that skips `ServerOnly` fields | model (local, A0) |
+| `model.Allower` | `interface{ Allow() model.Action }` | A6.1 |
+| `model.Action.Has` | `func (a Action) Has(want Action) bool` | `model` |
+| `model.Field` | `.Name`, `.IsPK() bool`, `.ServerOnly`, `.Item model.ItemSlot` (`model.ItemLabel`) | `model` |
+| `model.IDGenerator` | `interface{ NewID() string }` | `model` |
+| `storage.Condition`, `storage.Eq/Gt/Like`, `Condition.Logic() string` (`"AND"`/`"OR"`) | | `storage v0.1.18` |
+| `time.NowNano() int64` | `webtyp.com/time` | |
 
-If a signature differs, stop and name the symbol; never adapt by guessing.
+If a signature differs, stop and name the symbol in the PR; never adapt it by guessing.
 
-## Stage 1 — `contract.go` (new): the types modules see
+## Stage 1 — contract (`contract.go`, `store.go` new)
 
 ```go
-package crud
-
-import "webtyp.com/model"
-
-// Caller is who runs the operation, filled by crud from the authenticated session —
-// never from the request body. UserID is "" only on a read the app declared public.
-//
-// Example: func(c crud.Caller, list model.ModelSlice) error { return m.CreatePayments(c.UserID, …) }
-type Caller struct {
-	UserID string
-}
-
-// Route is what a module may still say about one of its operations. It has no Public,
-// Authenticated or Requires: crud fixes the permission to Resource(ModelName) + the action,
-// and only the app (appkit PublicReads) can open a read to visitors.
-type Route interface {
-	RequiresMFA() Route
-	Describe(text string) Route
-}
-
-// Registry is the only thing a module receives in MountOperations: the four standard operations.
+// contract.go
 type Registry interface {
-	Create(newList func() model.ModelSlice, create func(c Caller, list model.ModelSlice) error) Route
+	// Table mounts the actions t.Model allows, persisted by t.Store. ormc's Mount<Entity> is its only caller.
+	Table(t Table)
+	// Read mounts a read of a model that is not a table (a report, a derived view), answered by read.
 	Read(m model.ModuleNaming, newFilter func() model.Model, read func(c Caller, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route
-	Update(newRecord func() model.Model, update func(c Caller, ids, fields []string, rec model.Model) error) Route
-	Delete(m model.ModuleNaming, remove func(c Caller, ids []string) error) Route
 }
 
-// Module is a domain module: it names itself and mounts its entities' operations.
+// Table is one table a module offers. ormc builds it from typed hooks; a hook is nil when the module has no rule.
+type Table struct {
+	Model     model.Model            // a zero record; must implement model.Allower with Allow() != 0
+	NewList   func() model.ModelSlice
+	Store     Store
+	Create    func(c Caller, tx Tx, rec model.Model) error                       // per record, before insert, inside the transaction
+	Update    func(c Caller, tx Tx, old, next model.Model, fields []string) error // per id; old is the stored row, next carries only fields
+	Delete    func(c Caller, tx Tx, rec model.Model) error                       // per id, before delete; rec is the stored row
+	Search    func(c Caller, text string) ([]storage.Condition, error)          // replaces the default search; AND-only conditions
+	NewFilter func() model.Model                                                 // typed filter; equality on its non-empty fields
+	Committed func(c Caller, action model.Action, rec model.Model, fields []string) // after commit, once per record (events); fields = the updated fields on Update, nil otherwise
+	MFA       model.Action                                                       // actions that require a second factor
+}
+```
+
+```go
+// store.go
+// Query is what a read asks a Store for. Without Order, rows come ordered by primary key, ascending.
+type Query struct {
+	Conditions []storage.Condition // AND only (rule R1)
+	Order      []storage.Order     // empty = primary key ascending; a hook reads e.g. by expiry date (storage.Asc("expires_at"))
+	After      string              // rows with primary key > After; only valid with an empty Order (ErrAfterWithOrder) and a single-column key (ErrAfterCompositeKey)
+	Limit      int64               // already capped
+}
+
+// Tx reads and writes one table's rows. A Store scoped to a tenant applies the tenant to every call.
+type Tx interface {
+	ReadOne(rec model.Model, id string) error                                          // an error of kind model.ErrorNotFound when absent
+	ReadAll(newRow func() model.Model, q Query, onRow func(model.Model)) error
+	Create(rec model.Model) error
+	UpdateFields(rec model.Model, id string, fields []string) error
+	Delete(rec model.Model, id string) error
+}
+
+// Store is the repository of one table or resource (Repository pattern): orm.TenantStore for a table of the module,
+// or a Store the module writes over another service's API (D21).
+type Store interface {
+	Tx
+	NewID() string
+}
+
+// Transactional is an optional Store capability: fn runs in one transaction and an error rolls everything back.
+// A Store without it gets batches of one record only (ErrBatchNotAtomic): crud never promises atomicity that does not exist.
+type Transactional interface {
+	Atomic(fn func(tx Tx) error) error
+}
+```
+
+Rule **R1** (documented on `Query` and enforced in `crud`): every condition passed to a `Store` has `Logic() == "AND"`.
+`crud` checks the conditions a `Search` hook returns; one `"OR"` → `ErrAfterWithOrder model.Invalid = "crud: After pages by primary key; it cannot be combined with another Order"` and `ErrAfterCompositeKey model.Invalid = "crud: After pages by a single-column key; list this table whole (its screen uses view.Page{First: view.All})"` (checked by every Store).
+`ErrOrCondition model.Invalid = "crud: a search
+returned an OR condition; conditions are not grouped, so an OR could read other tenants' rows — return AND conditions only"`.
+
+### Public actions and `Mount` (D23)
+
+```go
+// Public is one action the app opens to visitors without a session (reads and writes). Only the app lists them.
 //
-//	var _ crud.Module = (*Module)(nil)
-type Module interface {
-	model.ModuleNaming
-	MountOperations(reg Registry)
+//	Public: []crud.Public{{Model: &abook.OnlineReservation{}, Actions: model.Create}}
+type Public struct {
+	Model   model.ModuleNaming
+	Actions model.Action
+}
+
+func Mount(reg router.OperationRegistry, public []Public, m Module) error // was public []model.ModuleNaming
+```
+`registry.isPublic(name string, action model.Action) bool` replaces `isPublic(name)`; `Registry.Read` (wire models) checks
+`isPublic(name, model.Read)`. A public action is mounted with `.Public()` instead of `.Requires(...)`; its hooks receive
+`Caller{UserID: ""}`. Update every caller in this repo (`loopback.go`, tests).
+
+### Composite primary keys (D22)
+
+`table.go` keeps `pk []int` (indexes of every `IsPK()` field, schema order). The wire id of a record is `model.JoinKey(<pk values>...)`
+(one part = the plain value). Helpers: `keyOf(rec) string` and `setKey(rec, id) error` (`model.SplitKey(id, len(pk))`; not ok →
+`ErrInvalidID`). A key part is a `*string` or an `*int64` in `Pointers()` (an `int64` part is written and parsed as decimal text with
+`webtyp.com/fmt`); any other kind → mount error `ErrKeyKind = "crud: a primary key field must be text or int64"`. Create: single text key
+empty → `Store.NewID()`; composite key → every part required (empty/zero → field error on that field). **Any** key value, single or
+composite, containing `model.KeySeparator` → `ErrKeyHasSeparator model.Invalid = "crud: a key value cannot contain /"`.
+The idempotent-retry check, `ReadOne`, `UpdateFields`, `Delete` and `Committed` use `keyOf`/`setKey` instead of the single pk.
+
+## Stage 2 — mount checks (`table.go` new)
+
+`func (r *registry) Table(t Table)` fails the mount (stored in `r.err`, returned by `crud.Mount`, so the server does not
+boot) with these errors (`mountError`):
+
+| Condition | Error |
+|---|---|
+| `t.Model` nil or `t.NewList` nil | `ErrNilFunction` (existing) |
+| `t.Model` not `model.Allower`, or `Allow() == 0` | `ErrNothingAllowed = "crud: Table for a model that allows nothing; set Allow in its model.Definition"` |
+| `t.Store` nil | `ErrNoStore = "crud: Table without a Store; pass orm.TenantStore(db, tenantID, ids)"` |
+| a hook set for an action not allowed (`Create` set and `!Allow.Has(model.Create)`, same for `Update`, `Delete`; `Search`/`NewFilter` set without `Read`) | `ErrHookWithoutAction = "crud: a rule is set for an action the model does not allow"` |
+| no primary-key field in `t.Model.Schema()` | `ErrNoPrimaryKey = "crud: Table model has no primary key field"` |
+| `t.Store` implements `ModelChecker` and `CheckModel(t.Model)` returns an error | that error (e.g. `orm.TenantStore` on a table without `tenant_id`) |
+
+Add to `store.go`:
+```go
+// ModelChecker is an optional Store capability: Table calls it at mount so a wrong Store for a model stops the boot.
+type ModelChecker interface {
+	CheckModel(m model.Model) error
 }
 ```
-`newFilter` may be nil (no filter): `read` then receives `filter == nil`.
 
-## Stage 2 — `mount.go` (new) replaces `mountOp` and the four exported `Mount*` functions
+Then it registers, for each allowed action, the operation `Op(t.Model, action)` with `.Public()` when `isPublic(ModelName, action)`,
+else `Requires(model.Resource(ModelName), action)`; `Accepts(t.Model)` for Create/Update; `RequiresMFA()` when `t.MFA.Has(action)`.
 
-Delete from `op.go`: `mountOp`. Delete the exported functions `MountCreate` (`create.go`), `MountRead` (`read.go`),
-`MountUpdate` (`update.go`), `MountDelete` (`delete.go`); their handler bodies move into the registry methods below,
-with `rpc.WriteError` → `router.WriteError` and the user's callback receiving `Caller`.
-Grep: `grep -rn "func Mount\(Create\|Read\|Update\|Delete\)\|rpc\." --include=*.go .` → empty.
+## Stage 3 — the engine (`table_create.go`, `table_update.go`, `table_delete.go`, `table_read.go`)
 
+Helpers in `table.go`: `pkIndex(schema)` (index of the PK field), `setString(rec, i, v)` / `setInt(rec, i, v)` through
+`rec.Pointers()[i].(*string)` / `(*int64)`; `stampIndex(schema, name)` for `created_at` / `updated_at`
+(constants `FieldCreatedAt = "created_at"`, `FieldUpdatedAt = "updated_at"`; a field with that name must be `*int64` in
+`Pointers()`, else mount error `ErrStampNotInt = "crud: created_at/updated_at must be an int64 nanosecond field"`).
+
+Helper in `table.go`:
 ```go
-package crud
-
-import (
-	"webtyp.com/model"
-	"webtyp.com/router"
-)
-
-// mountError is a wiring mistake found while mounting, before any request is served.
-type mountError string
-
-func (e mountError) Error() string { return string(e) }
-
-const (
-	ErrNilFunction    mountError = "crud: Create, Read, Update or Delete got a nil function"
-	ErrEmptyModelName mountError = "crud: entity with empty ModelName()"
-)
-
-// Mount mounts m's operations on a transport's registry: every operation gets its canonical
-// name Op(entity, action), Requires(Resource(entity.ModelName()), action) and the validation of
-// validate.go. A Read whose entity name is in public is mounted Public instead (only the app
-// passes public). The first wiring mistake is returned and the transport must not serve.
-//
-//	if err := crud.Mount(reg, nil, patients); err != nil { return err }
-func Mount(reg router.OperationRegistry, public []model.ModuleNaming, m Module) error {
-	r := &registry{reg: reg, public: public}
-	m.MountOperations(r)
-	return r.err
-}
-
-type registry struct {
-	reg    router.OperationRegistry
-	public []model.ModuleNaming
-	err    error
-}
-
-func (r *registry) fail(err error) Route {
-	if r.err == nil {
-		r.err = err
+// atomic runs fn in one transaction when the Store can; otherwise fn runs on the Store itself (batches of one, checked before).
+func atomic(s Store, fn func(tx Tx) error) error {
+	if t, ok := s.(Transactional); ok {
+		return t.Atomic(fn)
 	}
-	return noRoute{}
-}
-
-func (r *registry) isPublic(name string) bool {
-	for _, p := range r.public {
-		if p.ModelName() == name {
-			return true
-		}
-	}
-	return false
-}
-
-// route wraps router.Route so the module only sees RequiresMFA and Describe.
-type route struct{ r router.Route }
-
-func (x route) RequiresMFA() Route        { x.r.RequiresMFA(); return x }
-func (x route) Describe(text string) Route { x.r.Describe(text); return x }
-
-// noRoute is returned after a wiring mistake; Mount reports the error.
-type noRoute struct{}
-
-func (noRoute) RequiresMFA() Route      { return noRoute{} }
-func (noRoute) Describe(string) Route   { return noRoute{} }
-
-func callerOf(ctx router.Context) Caller { return Caller{UserID: ctx.UserID()} }
-```
-
-Each method (put Create in `create.go`, Read in `read.go`, Update in `update.go`, Delete in `delete.go`, as methods of `*registry`):
-
-```go
-func (r *registry) Create(newList func() model.ModelSlice, create func(c Caller, list model.ModelSlice) error) Route {
-	if newList == nil || create == nil {
-		return r.fail(ErrNilFunction)
-	}
-	sample := newList().Append().(model.Model)
-	if sample.ModelName() == "" {
-		return r.fail(ErrEmptyModelName)
-	}
-	schema := sample.Schema()
-	h := func(ctx router.Context) {
-		in := createIn{list: newList()}
-		if err := ctx.Decode(&in); err != nil {
-			router.WriteError(ctx, ErrCannotRead)
-			return
-		}
-		if err := validateCreateBatch(schema, in.list, in.tooMany); err != nil {
-			router.WriteError(ctx, err)
-			return
-		}
-		if err := create(callerOf(ctx), in.list); err != nil {
-			router.WriteError(ctx, err)
-			return
-		}
-		last := in.list.At(in.list.Len() - 1).(model.Encodable)
-		if err := ctx.Encode(last); err != nil {
-			router.WriteError(ctx, err)
-		}
-	}
-	rt := r.reg.Operation(Op(sample, model.Create), h).Requires(model.Resource(sample.ModelName()), model.Create)
-	rt.Accepts(sample)
-	return route{rt}
+	return fn(s)
 }
 ```
-`Update` mirrors today's `MountUpdate` body the same way (nil check, `ModelName` check, `update(callerOf(ctx), in.IDs, in.Fields, in.Record)`).
-`Delete` mirrors `MountDelete` (`remove(callerOf(ctx), in.IDs)`), `Accepts` nil.
+Before any write, a request with more than one record (Create) or more than one id (Update, Delete) on a Store that is not
+`Transactional` → `ErrBatchNotAtomic model.Invalid = "crud: this resource saves one record at a time; send one record per request"`.
 
-`Read`:
+**Create** (handler): decode `createIn{list: t.NewList()}` → `validateCreateBatch(schema, list, tooMany)` (existing) → 
 ```go
-func (r *registry) Read(m model.ModuleNaming, newFilter func() model.Model, read func(c Caller, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route {
-	if m == nil || read == nil {
-		return r.fail(ErrNilFunction)
-	}
-	if m.ModelName() == "" {
-		return r.fail(ErrEmptyModelName)
-	}
-	h := func(ctx router.Context) {
-		args := ReadArgs{}
-		if newFilter != nil {
-			args.Filter = newFilter()
-		}
-		if err := ctx.Decode(&args); err != nil {
-			router.WriteError(ctx, ErrCannotRead)
-			return
-		}
-		if err := validateReadArgs(&args); err != nil {
-			router.WriteError(ctx, err)
-			return
-		}
-		list, err := read(callerOf(ctx), args, args.Filter)
-		if err != nil {
-			router.WriteError(ctx, err)
-			return
-		}
-		if enc, ok := list.(model.Encodable); ok {
-			if err := ctx.Encode(enc); err != nil {
-				router.WriteError(ctx, err)
+err := atomic(t.Store, func(tx Tx) error {
+	now := time.NowNano()
+	for i := 0; i < list.Len(); i++ {
+		rec := list.At(i).(model.Model)
+		if id := *rec.Pointers()[pk].(*string); id == "" {
+			setString(rec, pk, t.Store.NewID())
+		} else {
+			// Retry is idempotent: ids made in the browser (offline-first) may arrive twice. A row with this id already
+			// stored (in this Store's scope) means this record was created before: skip it — no hook, no insert, no Committed.
+			stored := t.NewList().Append().(model.Model)
+			if err := tx.ReadOne(stored, id); err == nil {
+				if err := tx.ReadOne(rec, id); err != nil { // the response carries what is stored, not what was sent
+					return err
+				}
+				skipped[i] = true
+				continue
+			} else if model.KindOf(err) != model.ErrorNotFound {
+				return err
 			}
 		}
-	}
-	rt := r.reg.Operation(Op(m, model.Read), h)
-	if r.isPublic(m.ModelName()) {
-		rt.Public()
-	} else {
-		rt.Requires(model.Resource(m.ModelName()), model.Read)
-	}
-	rt.Accepts(&ReadArgs{})
-	return route{rt}
-}
-```
-
-## Stage 3 — `ReadArgs.Filter` and `validate.go`
-
-`read.go`: add `Filter model.Model` to `ReadArgs` (last field; comment: "the entity's typed filter, nil when the
-entity declares none; decoded from the key `filter`"). Add constant `keyFilter = "filter"` in `op.go`.
-`EncodeFields`: after `limit`, `if a.Filter != nil { w.Object(keyFilter, a.Filter) }`.
-`DecodeFields`: after `limit`, `if a.Filter != nil { r.Object(keyFilter, a.Filter) }`. Check `model.FieldWriter`/
-`FieldReader` for the exact `Object` method name and signature before writing; `UpdateArgs` already uses them (`update.go`).
-`ReadArgsModel` and `Schema()` do not describe the filter (MCP tools see id/search/after/limit only); say so in README.
-Update the comment of `Cap`: remove the example where a module calls it — crud applies it.
-
-`errors.go`: add `ErrArgTooLong model.Invalid = "crud: argument too long"` and
-`ErrServerOnlyField model.Invalid = "crud: field written only by the server"`.
-
-`validate.go`:
-```go
-// validateReadArgs rejects oversized arguments (never truncates them), caps the limit
-// and validates the typed filter against its schema.
-func validateReadArgs(a *ReadArgs) error {
-	if len(a.ID) > MaxID {
-		return ErrInvalidID
-	}
-	if len(a.Search) > MaxSearch || len(a.After) > MaxAfter {
-		return ErrArgTooLong
-	}
-	a.Limit = Cap(a.Limit)
-	if a.Filter == nil {
-		return nil
-	}
-	return model.ValidateInput(model.ActionCreate, a.Filter)
-}
-```
-`validateCreateBatch(schema []model.Field, list model.ModelSlice, tooMany bool)`: before the schema validation of each
-record, reject any `ServerOnly` field that carries a value:
-```go
-func serverOnlyWritten(schema []model.Field, rec model.Fielder) bool {
-	ptrs := rec.Pointers()
-	for i := range schema {
-		if !schema[i].ServerOnly {
-			continue
-		}
-		ft := schema[i].Type.Storage()
-		switch ft {
-		case model.FieldText, model.FieldRaw:
-			if v, _ := model.ReadStringPtr(ptrs[i]); v != "" {
-				return true
-			}
-		default:
-			if !model.IsZeroPtr(ptrs[i], ft) {
-				return true
+		if created >= 0 { setInt(rec, created, now) }
+		if updated >= 0 { setInt(rec, updated, now) }
+		if t.Create != nil {
+			if err := t.Create(caller, tx, rec); err != nil {
+				return err
 			}
 		}
+		if err := tx.Create(rec); err != nil {
+			return err
+		}
 	}
-	return false
-}
+	return nil
+})
 ```
-→ `if serverOnlyWritten(schema, elem) { return ErrServerOnlyField }`, then replace the current
-`model.Validator` / `model.ValidateFields` branch with `model.ValidateInput(model.ActionCreate, elem)`: a `NotNull` `ServerOnly`
-field (e.g. `tenant_id`) arrives empty and must pass; the module fills it. Grep: `grep -n "ValidateFields\|model.Validator" validate.go` → empty.
-`validateUpdateFields`: after finding `field := &schema[idx]`, `if field.ServerOnly { return ErrServerOnlyField }`.
+(`skipped := make([]bool, list.Len())` before `Atomic`.) Then, on success, `t.Committed(caller, model.Create, rec, nil)` for each record not skipped (if set), and encode the last record (existing behaviour). Add test `TestTable_CreateRetryIsIdempotent`: create `{id:"p1"}` twice → second call succeeds, one row, `Committed` called once.
 
-## Stage 4 — `loopback.go` (new): `crud.Loopback`, port of `webtyp.com/router` v0.4.18 `loopback/loopback.go`
-
-Copy that file into this package as `loopback.go` and change only this:
-- Public API (delete `New`, `WithTenant`, `ActingAs` names and all tenant injection: `tenantID`, `acceptsHasTenant`, the
-  `{"tenant_id":…}` body; nil args always send `{}`):
+**Update**: decode `UpdateArgs{Record: newRecord}` (newRecord = `t.NewList().Append().(model.Model)` each call) →
+`validateIDs`, `validateUpdateFields` (existing) → `fields` plus `FieldUpdatedAt` when present and not already listed →
 ```go
-// Loopback is an in-process router.Caller over real modules, for demos, offline apps and tests:
-// same operation names as rpc and mcp ("<ModelName>.<Op(entity, action)>"), no transport and
-// no RBAC. It panics on a wiring mistake (crud.Mount's error) — it only runs in demos and tests.
-//
-//	caller := crud.Loopback(patients)
-func Loopback(mods ...Module) router.Caller { return newLoopback("", mods) }
-
-// LoopbackActingAs is Loopback signed in as userID: operations see it in Caller.UserID.
-//
-//	caller := crud.LoopbackActingAs("u1", payments)
-func LoopbackActingAs(userID string, mods ...Module) router.Caller { return newLoopback(userID, mods) }
+err := atomic(t.Store, func(tx Tx) error {
+	for _, id := range in.IDs {
+		old := t.NewList().Append().(model.Model)
+		if err := tx.ReadOne(old, id); err != nil {
+			return err // not found stays not found: 404
+		}
+		next := in.Record
+		setString(next, pk, id)
+		if updated >= 0 { setInt(next, updated, time.NowNano()) }
+		if t.Update != nil {
+			if err := t.Update(caller, tx, old, next, in.Fields); err != nil {
+				return err
+			}
+		}
+		if err := tx.UpdateFields(next, id, fields); err != nil {
+			return err
+		}
+	}
+	return nil
+})
 ```
-- In `newLoopback`, for each non-nil module: empty `ModelName()` panics with the existing message (prefix `crud: loopback:`);
-  set `reg.module = m.ModelName()`; `if err := Mount(reg, nil, m); err != nil { panic(err.Error()) }`.
-- Rename the unexported types to avoid clashes with stage 2: `registry`→`loopReg`, `opEntry`→`loopOp`, `noopRoute`→`loopRoute`,
-  `caller`→`loopCaller`, `inCtx`→`loopCtx`, `callError`→`loopError`. `loopRoute.Accepts` keeps no state (tenant injection is gone).
-- `crud` already requires `webtyp.com/json` and `webtyp.com/fmt`.
+After commit, per id: `setString(next, pk, id)` then `Committed(caller, model.Update, next, in.Fields)` (one `next` is shared by all ids; set its id before each call). A hook may change `next`, but only the columns in `fields` are written; to write another column of this or another row, the hook calls `tx.UpdateFields` itself (document this on `Table.Update`). Status 204 (existing).
 
-## Stage 5 — tests (`tests/`, external package, `crud.Loopback` replaces `router/loopback` everywhere)
+**Delete**: decode `DeleteArgs` → `validateIDs` → in `atomic(t.Store, …)`: per id a fresh `old := t.NewList().Append().(model.Model)`, `ReadOne(old, id)`, hook `Delete(caller, tx, old)`, `tx.Delete(old, id)`, append `old` to `deleted`;
+after commit `Committed(caller, model.Delete, row, nil)` for each row of `deleted`. Status 204.
 
-Rewrite `tests/mount_test.go`, `tests/security_test.go`, `tests/args_json_test.go`, `tests/bench_test.go` onto
-`MountOperations(reg crud.Registry)`; every `loopback.New(mod)` → `crud.Loopback(mod)`. Rename the tests
-`TestMountCreate_*`→`TestCreate_*`, `TestMountRead_*`→`TestRead_*`, `TestMountUpdate_*`→`TestUpdate_*`,
-`TestMountDelete_*`→`TestDelete_*`. Change `TestSecurity_SearchTermCapped` and `TestSecurity_CursorAndIDCapped` to expect
-rejection: Search of 257 bytes → error with `model.KindOf == model.ErrorInvalid` and text containing `argument too long`;
-ID of 129 bytes → `crud: empty id` (ErrInvalidID). New tests (setup → call → expected):
+**Read**: decode `ReadArgs` (with `Filter = t.NewFilter()` when set) → `validateReadArgs` (existing) →
+- `ID != ""` → `ReadOne` into a new row → list of one (not found → 404).
+- else conditions: `Search != ""` → `t.Search(caller, text)` when set (check R1), otherwise `storage.Like(<the ItemLabel field>, "%"+lower(text)+"%")`
+  (the one field whose `Item == model.ItemLabel`; no such field → `ErrNoSearchField model.Invalid = "crud: this table has no searchable field"`);
+  filter → `storage.Eq(field.Name, value)` for each filter field whose pointer holds a non-zero value (`*string != ""`,
+  `*int64 != 0`, `*bool == true`; other kinds: skip and document);
+- `ReadAll(newRow, Query{Conditions, After: args.After, Limit: Cap(args.Limit)}, append)`; encode the list (existing).
 
-| Test (file) | Setup | Call | Expected |
-|---|---|---|---|
-| `TestCaller_UserIDFromSession` (`tests/caller_test.go`) | module whose Create stores `c.UserID` | `crud.LoopbackActingAs("u1", mod).Call(<module>.test_record_c, {records:[{name:"a"}]})` | stored UserID `"u1"` |
-| `TestCaller_AnonymousLoopback` | same | `crud.Loopback(mod)` | stored UserID `""` |
-| `TestRead_FilterDecodedAndValidated` (`tests/filter_test.go`) | entity with filter type `byName{Name string}` (schema `name` Text NotNull) | Call `_r` with `{"filter":{"name":"ana"}}` | read receives `filter.(*byName).Name == "ana"` |
-| `TestRead_FilterInvalidIs400` | same | `{"filter":{"name":""}}` | ErrorInvalid, field `name`; read not called |
-| `TestRead_NilFilter` | `newFilter` nil | `{}` | read receives `filter == nil` |
-| `TestServerOnly_CreateRejected` (`tests/server_only_test.go`) | schema field `owner` with `ServerOnly: true` | create `{records:[{name:"a",owner:"x"}]}` | error text `crud: field written only by the server`; create not called |
-| `TestServerOnly_CreateEmptyAllowed` | same, and `owner` also `NotNull` | `{records:[{name:"a"}]}` | create called (NotNull ServerOnly is not required from the client) |
-| `TestServerOnly_UpdateRejected` | same | update fields `["owner"]` | `crud: field written only by the server` |
-| `TestMount_PublicRead` (`tests/public_test.go`) | collecting `router.OperationRegistry` fake recording Public/Requires per name | `crud.Mount(fake, []model.ModuleNaming{&mockRecord{}}, mod)` | `test_record_r` is Public with no Requires; `test_record_c` Requires(`test_record`, Create) |
-| `TestMount_NotPublicByDefault` | same fake | `crud.Mount(fake, nil, mod)` | `test_record_r` Requires(`test_record`, Read), not Public |
-| `TestMount_NilFunctionIsError` | module calling `reg.Read(&mockRecord{}, nil, nil)` | `crud.Mount(fake, nil, mod)` | `== crud.ErrNilFunction` |
-| `TestMount_RouteHasNoPublic` (compile-level) | `var _ interface{ RequiresMFA() crud.Route; Describe(string) crud.Route } = crud.Route(nil)` and a comment that `Public` does not exist | — | compiles |
+## Stage 4 — deletions
 
-Add each test to `docs/TESTS.md` (create if missing: table `Test | Rule`).
+Delete `func (r *registry) Create`, `func (r *registry) Update`, `func (r *registry) Delete` (keep `CreateArgs`, `UpdateArgs`,
+`DeleteArgs`, `createIn` — the wire types the engine and the clients use). `grep -rn "func (r \*registry) \(Create\|Update\|Delete\)(" .` → empty.
+`Route.Describe` stays only on `Read` (wire models); tables get the description `"<Action> <ModelName>"` built in `table.go`.
 
-## Stage 6 — documentation
+## Stage 5 — conformance suite (`storetest/storetest.go` new) and tests
 
-`README.md` (≤150 lines; `Why This Exists` with a Without/With: `reg.Operation` + `args.TenantId` vs `MountOperations(reg crud.Registry)`;
-`Before You Start`; `Step-by-Step Guide` with a complete compilable module: entity, `MountOperations` using the four methods,
-a typed filter, `crud.Caller`, `ServerOnly`, a test with `crud.Loopback`; `Documentation Map`). `docs/ARCHITECTURE.md`:
-the flow transport → `crud.Mount` → registry → `validate.go` → module, public reads, why no `Public()` on `Route`.
-Remove from `docs/*` every mention of `MountCreate/MountRead/MountUpdate/MountDelete` and `rpc.WriteError`.
+`package storetest` exports `func Run(t *testing.T, newStore func(t *testing.T) crud.Store)` — every `Store` implementation runs
+it (orm in A6.3): ReadOne not found has kind `model.ErrorNotFound`; Create then ReadOne round-trips; UpdateFields changes only the
+listed fields; ReadAll orders by id (or by `Order`) and honours After/Limit; After with a non-empty Order → `ErrAfterWithOrder`; when the Store is `Transactional`, Atomic rolls back on error; a Store rejects an OR condition.
+It uses a test model defined in `storetest` (id, name with `Item: model.ItemLabel`, created_at, updated_at, `Allow` all).
+
+`tests/` (rows in `docs/TESTS.md`) use an in-memory `Store` written in `tests/memstore_test.go` that passes `storetest.Run`, and
+`crud.Loopback` with a module whose `MountOperations` calls `reg.Table(...)` directly (no ormc here):
+
+| Test | Setup → call → expected |
+|---|---|
+| `TestTable_NothingAllowedFailsMount` | model with `Allow() == 0` → `crud.Mount` returns `ErrNothingAllowed` |
+| `TestTable_NotAllowedActionDoesNotExist` | `Allow: Create\|Read` → calling `_u` → error "unknown operation" (the router's), not a stub |
+| `TestTable_HookWithoutActionFailsMount` | `Update` hook with `Allow: Read` → `ErrHookWithoutAction` |
+| `TestTable_CreateSetsIDAndStamps` | create without id → stored row has id, `created_at == updated_at > 0` |
+| `TestTable_BatchOnNonTransactionalStoreRejected` | a Store without `Atomic`; create 2 records → `ErrBatchNotAtomic`; 1 record → stored |
+| `TestTable_CreateBatchIsAtomic` | 2 records, hook fails on the 2nd → 0 rows stored |
+| `TestTable_UpdateOnlyListedFields` | row {name:"a", note:"x"}; update fields `["name"]` with record {name:"b"} → stored {name:"b", note:"x"} |
+| `TestTable_UpdateMissingIsNotFound` | update id "nope" → error kind `model.ErrorNotFound` |
+| `TestTable_UpdateHookSeesOldAndNext` | hook rejects when `old.name == "locked"` → field error returned, row unchanged |
+| `TestTable_CommittedAfterCommitOnly` | hook error → `Committed` never called; success → called once per record |
+| `TestTable_CommittedUpdateCarriesEachID` | update ids `["a","b"]` → `Committed` sees id `a` then id `b`, with `fields` |
+| `TestTable_SearchDefaultUsesItemLabel` | rows "Ana", "Bruno"; search "an" → only "Ana" |
+| `TestTable_SearchHookOrIsRejected` | `Search` returns `storage.Or(storage.Eq(...))` → `ErrOrCondition` |
+| `TestTable_FilterEquality` | filter {status:"open"} → only open rows |
+| `TestTable_CompositeKeyRoundTrip` | table with PK (room_id, equipment_id); create `{room_id:"r1", equipment_id:"e7"}`, read `{id:"r1/e7"}` → the row; delete ids `["r1/e7"]` → gone |
+| `TestTable_CompositeKeyPartRequired` | create without `equipment_id` → field error on `equipment_id` |
+| `TestTable_KeyWithSeparatorRejected` | create `{room_id:"r/1", …}` → `ErrKeyHasSeparator`; a single-key table with id `"a/b"` → `ErrKeyHasSeparator` |
+| `TestTable_CompositeKeyWithInt` | PK (shift_id text, specific_date int64); create; read `{id:"s1/1700000000"}` → the row |
+| `TestTable_PublicCreateWithoutSession` | `Mount(reg, []Public{{&T{}, model.Create}}, m)`; route `_c` has public access; hook sees `UserID == ""`; `_r` still requires a session |
+| `TestTable_ServerOnlyRejected` | create with a `ServerOnly` field set → `ErrServerOnlyField` (existing check, through Table) |
+
+## Stage 6 — translations and documentation
+
+`langc sync .` (zero pending, zero reuse warnings). `README.md`: replace the `Registry.Create/Update/Delete` sections with
+«A table: declare `Allow` in its `model.Definition`; `ormc` generates `Mount<Entity>`; write rules only» and «A report: `Registry.Read`».
+`docs/ARCHITECTURE.md`: the engine (create/update/delete/read flows above as a mermaid `flowchart TD`), rule R1 and why.
 
 ## Delivery check
 
-`gotest` passes; `grep -rn "webtyp.com/rpc\|router/loopback\|func Mount\(Create\|Read\|Update\|Delete\)" --include=*.go .` → empty;
-`grep -n "webtyp.com/rpc" go.mod` → empty. A tree that does not compile or whose tests did not run is a failed delivery.
+```bash
+gotest
+langc sync .
+grep -rn "webtyp.com/orm" .                                            # empty
+grep -rn "func (r \*registry) \(Create\|Update\|Delete\)(" .          # empty
+```
+A PR that does not compile, or whose tests could not run, is a failed delivery.
 
 | Stage | Files |
 |---|---|
-| 1 | `contract.go` |
-| 2 | `mount.go`, `op.go`, `create.go`, `read.go`, `update.go`, `delete.go` |
-| 3 | `read.go`, `op.go`, `errors.go`, `validate.go` |
-| 4 | `loopback.go` |
-| 5 | `tests/*.go`, `docs/TESTS.md` |
-| 6 | `README.md`, `docs/ARCHITECTURE.md` |
+| 1 | `contract.go`, `store.go` |
+| 2 | `table.go` |
+| 3 | `table_create.go`, `table_update.go`, `table_delete.go`, `table_read.go` |
+| 4 | `create.go`, `update.go`, `delete.go` |
+| 5 | `storetest/storetest.go`, `tests/*.go`, `docs/TESTS.md` |
+| 6 | `lang.json`, `README.md`, `docs/ARCHITECTURE.md` |

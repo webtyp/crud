@@ -1,161 +1,379 @@
 ---
-PLAN: "feat: crud — the wire contract of record operations (list paging, save, delete), moved out of view"
-TAG: v0.1.0
-EXECUTOR: jules
+PLAN: "feat!: closed contract — crud.Module, crud.Registry, crud.Route, crud.Caller, typed read filter, ServerOnly, crud.Loopback"
+EXECUTOR: antigravity
 REVIEWER: none
 ---
 
 > Read AGENTS.md at the repo root before any change.
-> **Finish by yourself:** when the delivery check passes, commit, push and open the pull request. Never ask whether to
-> proceed or finalize — nobody answers, and a session that waits ends without your work.
+> **Finish by yourself:** when the delivery check passes, commit after every stage and stop. Never ask whether to
+> proceed. This plan runs **locally**: do not tag, push or publish anything; the owner reviews first.
+> Never run `git reset`, `git restore`, `git checkout -- <file>` or `git stash` on your own work.
 
-# crud — list paging, save and delete contract
+# Plan: the closed CRUD contract
 
-## Why
+Context (master `webtyp/docs/ARCHITECTURE_MASTER_PLAN.md`, decisions D5–D14; diagram
+`webtyp/docs/diagrams/TRANSPORT_CRUD_ARCHITECTURE.md`): today a module receives `router.OperationRegistry` and can
+register any handler, read `args.TenantId` from the client (IDOR) or chain `.Public()`. After this plan a module
+receives **only** `crud.Registry` (4 methods), gets a `crud.Route` with no `Public`/`Authenticated`/`Requires`, learns
+who calls through `crud.Caller`, and every request goes through `validate.go`. Transports (rpc, mcp, dbsync, the
+loopback) call `crud.Mount`.
 
-`webtyp.com/view` is the screen library (presenter, screens; it imports `webtyp.com/dom`). Since list paging, every
-server decodes `view.ListArgs` and caps with `view.Cap`, so every server and edge Worker links the UI kit
-(`edge → auth/authority → view → dom`, caught by `veltylabs/iam/tests/layering_test.go`). This repo takes the half of
-`view` that both sides share — the wire contract — so a server imports `crud` and never `view`.
+## Tools
 
-This plan only builds `crud`. Follow-up plans (not here): `view` deletes these files and imports `crud`; `auth`,
-`access`, `layout`, `appkit` and the modules switch `view.ListArgs/Cap/MaxPage/MountSave/MountDelete` to `crud.*`.
+```bash
+go install webtyp.com/devflow/cmd/gotest@latest
+```
+Local `replace` in `go.mod` (do not remove them; publishing does):
+```
+replace webtyp.com/model => ../model
+replace webtyp.com/router => ../router
+```
+Remove `webtyp.com/rpc` from `go.mod` (`go mod tidy`). Environment: `GOPRIVATE=webtyp.com/*,github.com/veltylabs/*`, `GOFLAGS=-mod=mod`.
 
-## Ecosystem search
+## APIs used
 
-- `view` (`page.go`, `mount.go`, `payload.go`): the code being moved — **reuse** by moving, not copying.
-- `router` (`OperationRegistry`, `Caller`, `loopback`): routing and calling — **reuse**; record shapes are not its concern.
-- `rpc` (`WriteError`): HTTP transport and error mapping — **reuse**; record shapes are not transport.
-- `model` (`Model`, `FieldWriter/Reader`, `Invalid`, `Definition`): **reuse**.
-- No package named `crud`, `paging` or `list` exists in `webtyp/` or `veltylabs/`: **new**.
+| Symbol | Signature | Where |
+|---|---|---|
+| `router.OperationRegistry` | `interface{ Operation(name string, h HandlerFunc) Route }` | router `router.go:192` |
+| `router.Route` | `Requires(model.Resource, model.Action) Route; Authenticated() Route; Public() Route; RequiresMFA() Route; Accepts(model.Fielder) Route; Describe(string) Route` | router `route.go` |
+| `router.Context.UserID` | `UserID() string` | router `router.go:16` |
+| `router.WriteError` | `func WriteError(ctx Context, err error)` | router (local, router plan stage 1) |
+| `router.Caller` | `Call(op string, args model.Encodable, into model.Decodable, done func(error)); Dispatch(op string, args model.Encodable)` | router `caller.go` |
+| `router.Problem`, `router.KindOfStatus` | see router `problem.go` | |
+| `model.Field.ServerOnly` | `bool` | model (local, A0) |
+| `model.Model`, `model.ModelSlice`, `model.ModuleNaming`, `model.Fielder` | `webtyp/model/interface.go` | |
+| `model.Resource(name)`, `model.Read/Create/Update/Delete` | | model `rbac.go` |
+| `model.ReadStringPtr`, `model.IsZeroPtr`, `model.ActionCreate` | used today in `validate.go` | |
+| `model.ValidateInput` | `func ValidateInput(action byte, f Fielder) error` — `ValidateFields` that skips `ServerOnly` fields | model (local, A0) |
 
-## API design gate
+If a signature differs, stop and name the symbol; never adapt by guessing.
 
-1. **Prior art** (unverified in this session): Google AIP-158 puts pagination (`page_size`, `page_token`) in the API
-   contract and AIP-131…135 define List/Get/Create/Update/Delete without any UI; Django REST Framework keeps
-   `rest_framework.pagination` apart from templates; Connect/Twirp messages are shared by client and server and know
-   nothing about rendering. All three: the paging contract is API, not view.
-2. **Names:** `crud.ListArgs`, `crud.Cap`, `crud.MaxPage`, `crud.MountSave`, `crud.MountDelete` keep the names
-   consumers already use (only the package changes). New exported names: `crud.SaveArgs`, `crud.UpdateArgs`,
-   `crud.DeleteArgs` — "the args of a save/update/delete call"; they replace `view`'s unexported `saveArgs`,
-   `updateArgs`, `deleteArgs`, which must become visible because the browser encoder (in `view`) and the server
-   decoder (here) must share one shape.
-3. **Ledger:** concepts +1 package / −0; call-site lines 0 (import path only); ways to do the same thing 0 — `view`
-   loses these symbols in its follow-up plan, no alias.
-4. **Where:** one concern — what crosses the wire for record operations. No UI import (guard test below).
-5. **Deletes:** the stub `crud.go`; later, in `view`: `page.go` (all but `Page`, `All`, `DefaultPage`, `declared`),
-   `mount.go`, `payload.go`.
+## Stage 1 — `contract.go` (new): the types modules see
 
-Note: `MountSave` keeps its type parameters exactly as in `view` today (it is moved, not redesigned); removing them is
-out of scope.
+```go
+package crud
 
-## Source
+import "webtyp.com/model"
 
-The current code is copied under `_temp/view/` (this repo cannot see `webtyp/view`):
-`_temp/view/page.go`, `_temp/view/mount.go`, `_temp/view/payload.go`, `_temp/view/tests/{mount,page,payload_json}_test.go`.
+// Caller is who runs the operation, filled by crud from the authenticated session —
+// never from the request body. UserID is "" only on a read the app declared public.
+//
+// Example: func(c crud.Caller, list model.ModelSlice) error { return m.CreatePayments(c.UserID, …) }
+type Caller struct {
+	UserID string
+}
 
-## Stage 1 — module and files
+// Route is what a module may still say about one of its operations. It has no Public,
+// Authenticated or Requires: crud fixes the permission to Resource(ModelName) + the action,
+// and only the app (appkit PublicReads) can open a read to visitors.
+type Route interface {
+	RequiresMFA() Route
+	Describe(text string) Route
+}
 
-1. `go.mod`: `module webtyp.com/crud`, require `webtyp.com/model v0.2.13`, `webtyp.com/router v0.4.17`,
-   `webtyp.com/rpc v0.2.15` (then `go mod tidy`). Nothing else from `webtyp.com/*`.
-2. Delete `crud.go`.
-3. `list.go` (package `crud`): from `_temp/view/page.go` copy **only** `MaxPage`, `Cap`, `ListArgs`, `ListArgsModel` and
-   the five `ListArgs` methods. Do **not** copy `Page`, `All`, `DefaultPage`, `declared` (they stay in `view`). In every
-   comment replace `view.` with `crud.`. `Cap`'s example becomes
-   `rows, err := m.listPatients(m.tenantID, args.Search, args.After, crud.Cap(args.Limit))`. The `MaxPage` comment
-   becomes: `// MaxPage is the most rows one list call returns; the server caps every request to it (Cap).`
-4. `args.go`: the wire shapes, exported, with the JSON keys as unexported constants used by both encoder and decoder:
+// Registry is the only thing a module receives in MountOperations: the four standard operations.
+type Registry interface {
+	Create(newList func() model.ModelSlice, create func(c Caller, list model.ModelSlice) error) Route
+	Read(m model.ModuleNaming, newFilter func() model.Model, read func(c Caller, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route
+	Update(newRecord func() model.Model, update func(c Caller, ids, fields []string, rec model.Model) error) Route
+	Delete(m model.ModuleNaming, remove func(c Caller, ids []string) error) Route
+}
 
-   ```go
-   const (
-   	keyRecords = "records"
-   	keyIDs     = "ids"
-   	keyFields  = "fields"
-   	keyRecord  = "record"
-   )
+// Module is a domain module: it names itself and mounts its entities' operations.
+//
+//	var _ crud.Module = (*Module)(nil)
+type Module interface {
+	model.ModuleNaming
+	MountOperations(reg Registry)
+}
+```
+`newFilter` may be nil (no filter): `read` then receives `filter == nil`.
 
-   // SaveArgs is what a screen sends to a save operation: whole records, saved in order.
-   //
-   // Example: caller.Call(op, &crud.SaveArgs{Records: recs}, saved, done)
-   type SaveArgs struct{ Records []model.Model }
+## Stage 2 — `mount.go` (new) replaces `mountOp` and the four exported `Mount*` functions
 
-   // UpdateArgs is what a screen sends to patch fields: which rows, which columns, and a record carrying the values.
-   //
-   // Example: caller.Call(op, &crud.UpdateArgs{IDs: ids, Fields: fields, Record: rec}, nil, done)
-   type UpdateArgs struct {
-   	IDs    []string
-   	Fields []string
-   	Record model.Model
-   }
+Delete from `op.go`: `mountOp`. Delete the exported functions `MountCreate` (`create.go`), `MountRead` (`read.go`),
+`MountUpdate` (`update.go`), `MountDelete` (`delete.go`); their handler bodies move into the registry methods below,
+with `rpc.WriteError` → `router.WriteError` and the user's callback receiving `Caller`.
+Grep: `grep -rn "func Mount\(Create\|Read\|Update\|Delete\)\|rpc\." --include=*.go .` → empty.
 
-   // DeleteArgs is what a screen sends to a delete operation: the ids to remove.
-   //
-   // Example: caller.Call(op, &crud.DeleteArgs{IDs: ids}, nil, done)
-   type DeleteArgs struct{ IDs []string }
-   ```
+```go
+package crud
 
-   Each gets `IsNil()` and `EncodeFields(w model.FieldWriter)` with the bodies of `saveArgs`, `updateArgs`,
-   `deleteArgs` in `_temp/view/payload.go`, using the constants instead of the string literals.
-   Copy `saveIn` and `deleteIn` (unexported, with their `IsNil` and `DecodeFields`) using the same constants.
-5. `errors.go`:
+import (
+	"webtyp.com/model"
+	"webtyp.com/router"
+)
 
-   ```go
-   const (
-   	ErrNoRecords  model.Invalid = "crud: no records to save"
-   	ErrNoIDs      model.Invalid = "crud: no ids given"
-   	ErrCannotRead model.Invalid = "crud: cannot read the request"
-   )
-   ```
-6. `mount.go`: copy `_temp/view/mount.go` (`statusNoContent`, `MountSave`, `MountDelete`), package `crud`, examples
-   say `crud.MountSave` / `crud.MountDelete`.
+// mountError is a wiring mistake found while mounting, before any request is served.
+type mountError string
 
-## Stage 2 — tests (`tests/`, package `tests`)
+func (e mountError) Error() string { return string(e) }
 
-1. `tests/mount_test.go`: port `_temp/view/tests/mount_test.go`. It must not import `view`: replace the
-   `view.NewRecords().Caller(...)` + `view.NewCallerLister(...)` round trip with the loopback caller directly —
-   `c := loopback.ActingAs("t", "u", mod)` then `c.Call("save", &crud.SaveArgs{Records: []model.Model{rec}}, out, done)`
-   and `c.Call("delete", &crud.DeleteArgs{IDs: ids}, nil, done)`. Keep every assertion (saved id filled, ids received
-   in order, `ErrNoRecords`/`ErrNoIDs` on empty input). Declare a tiny test model in the test file instead of
-   `view/conformance.MockRecord`.
-2. `tests/list_test.go`: port `TestCap` and `TestListArgs_RoundTrip` from `_temp/view/tests/page_test.go`
-   (`TestCallerLister_SendsSearchAndPage` stays in `view`).
-3. `tests/args_json_test.go`: for each of `SaveArgs`, `UpdateArgs`, `DeleteArgs` encode with `webtyp.com/json` and
-   assert the exact JSON (`{"records":[…]}`, `{"ids":[…],"fields":[…],"record":{…}}`, `{"ids":[…]}`), and that
-   `saveIn`/`deleteIn` decode what `SaveArgs`/`DeleteArgs` encode (through `MountSave`/`MountDelete` with loopback).
-4. `tests/no_ui_test.go` — the guard:
+const (
+	ErrNilFunction    mountError = "crud: Create, Read, Update or Delete got a nil function"
+	ErrEmptyModelName mountError = "crud: entity with empty ModelName()"
+)
 
-   ```go
-   func TestCrudImportsNoUI(t *testing.T) {
-   	cmd := exec.Command("go", "list", "-deps", "webtyp.com/crud")
-   	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
-   	out, err := cmd.CombinedOutput()
-   	if err != nil {
-   		t.Fatalf("go list: %v\n%s", err, out)
-   	}
-   	for _, f := range []string{"webtyp.com/dom", "webtyp.com/html", "webtyp.com/form", "webtyp.com/layout", "webtyp.com/svg", "webtyp.com/view"} {
-   		for _, line := range strings.Split(string(out), "\n") {
-   			if line == f {
-   				t.Fatalf("crud must not import UI package %s: servers and edge Workers import crud", f)
-   			}
-   		}
-   	}
-   }
-   ```
+// Mount mounts m's operations on a transport's registry: every operation gets its canonical
+// name Op(entity, action), Requires(Resource(entity.ModelName()), action) and the validation of
+// validate.go. A Read whose entity name is in public is mounted Public instead (only the app
+// passes public). The first wiring mistake is returned and the transport must not serve.
+//
+//	if err := crud.Mount(reg, nil, patients); err != nil { return err }
+func Mount(reg router.OperationRegistry, public []model.ModuleNaming, m Module) error {
+	r := &registry{reg: reg, public: public}
+	m.MountOperations(r)
+	return r.err
+}
 
-## Stage 3 — docs
+type registry struct {
+	reg    router.OperationRegistry
+	public []model.ModuleNaming
+	err    error
+}
 
-1. `README.md`: one-line description (as `go.mod`'s repo description), then an «I want to… → use» table:
-   decode a list call → `var args crud.ListArgs; ctx.Decode(&args)` + `.Accepts(&crud.ListArgs{})`; cap the limit →
-   `crud.Cap(args.Limit)`; mount save → `crud.MountSave(reg, op, save).Requires(...)`; mount delete →
-   `crud.MountDelete(reg, op, remove).Requires(...)`; send a save/update/delete from a client →
-   `caller.Call(op, &crud.SaveArgs{…}, …)`. One sentence: «servers import `crud`, never `webtyp.com/view`».
-2. Delete `_temp/`.
+func (r *registry) fail(err error) Route {
+	if r.err == nil {
+		r.err = err
+	}
+	return noRoute{}
+}
+
+func (r *registry) isPublic(name string) bool {
+	for _, p := range r.public {
+		if p.ModelName() == name {
+			return true
+		}
+	}
+	return false
+}
+
+// route wraps router.Route so the module only sees RequiresMFA and Describe.
+type route struct{ r router.Route }
+
+func (x route) RequiresMFA() Route        { x.r.RequiresMFA(); return x }
+func (x route) Describe(text string) Route { x.r.Describe(text); return x }
+
+// noRoute is returned after a wiring mistake; Mount reports the error.
+type noRoute struct{}
+
+func (noRoute) RequiresMFA() Route      { return noRoute{} }
+func (noRoute) Describe(string) Route   { return noRoute{} }
+
+func callerOf(ctx router.Context) Caller { return Caller{UserID: ctx.UserID()} }
+```
+
+Each method (put Create in `create.go`, Read in `read.go`, Update in `update.go`, Delete in `delete.go`, as methods of `*registry`):
+
+```go
+func (r *registry) Create(newList func() model.ModelSlice, create func(c Caller, list model.ModelSlice) error) Route {
+	if newList == nil || create == nil {
+		return r.fail(ErrNilFunction)
+	}
+	sample := newList().Append().(model.Model)
+	if sample.ModelName() == "" {
+		return r.fail(ErrEmptyModelName)
+	}
+	schema := sample.Schema()
+	h := func(ctx router.Context) {
+		in := createIn{list: newList()}
+		if err := ctx.Decode(&in); err != nil {
+			router.WriteError(ctx, ErrCannotRead)
+			return
+		}
+		if err := validateCreateBatch(schema, in.list, in.tooMany); err != nil {
+			router.WriteError(ctx, err)
+			return
+		}
+		if err := create(callerOf(ctx), in.list); err != nil {
+			router.WriteError(ctx, err)
+			return
+		}
+		last := in.list.At(in.list.Len() - 1).(model.Encodable)
+		if err := ctx.Encode(last); err != nil {
+			router.WriteError(ctx, err)
+		}
+	}
+	rt := r.reg.Operation(Op(sample, model.Create), h).Requires(model.Resource(sample.ModelName()), model.Create)
+	rt.Accepts(sample)
+	return route{rt}
+}
+```
+`Update` mirrors today's `MountUpdate` body the same way (nil check, `ModelName` check, `update(callerOf(ctx), in.IDs, in.Fields, in.Record)`).
+`Delete` mirrors `MountDelete` (`remove(callerOf(ctx), in.IDs)`), `Accepts` nil.
+
+`Read`:
+```go
+func (r *registry) Read(m model.ModuleNaming, newFilter func() model.Model, read func(c Caller, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route {
+	if m == nil || read == nil {
+		return r.fail(ErrNilFunction)
+	}
+	if m.ModelName() == "" {
+		return r.fail(ErrEmptyModelName)
+	}
+	h := func(ctx router.Context) {
+		args := ReadArgs{}
+		if newFilter != nil {
+			args.Filter = newFilter()
+		}
+		if err := ctx.Decode(&args); err != nil {
+			router.WriteError(ctx, ErrCannotRead)
+			return
+		}
+		if err := validateReadArgs(&args); err != nil {
+			router.WriteError(ctx, err)
+			return
+		}
+		list, err := read(callerOf(ctx), args, args.Filter)
+		if err != nil {
+			router.WriteError(ctx, err)
+			return
+		}
+		if enc, ok := list.(model.Encodable); ok {
+			if err := ctx.Encode(enc); err != nil {
+				router.WriteError(ctx, err)
+			}
+		}
+	}
+	rt := r.reg.Operation(Op(m, model.Read), h)
+	if r.isPublic(m.ModelName()) {
+		rt.Public()
+	} else {
+		rt.Requires(model.Resource(m.ModelName()), model.Read)
+	}
+	rt.Accepts(&ReadArgs{})
+	return route{rt}
+}
+```
+
+## Stage 3 — `ReadArgs.Filter` and `validate.go`
+
+`read.go`: add `Filter model.Model` to `ReadArgs` (last field; comment: "the entity's typed filter, nil when the
+entity declares none; decoded from the key `filter`"). Add constant `keyFilter = "filter"` in `op.go`.
+`EncodeFields`: after `limit`, `if a.Filter != nil { w.Object(keyFilter, a.Filter) }`.
+`DecodeFields`: after `limit`, `if a.Filter != nil { r.Object(keyFilter, a.Filter) }`. Check `model.FieldWriter`/
+`FieldReader` for the exact `Object` method name and signature before writing; `UpdateArgs` already uses them (`update.go`).
+`ReadArgsModel` and `Schema()` do not describe the filter (MCP tools see id/search/after/limit only); say so in README.
+Update the comment of `Cap`: remove the example where a module calls it — crud applies it.
+
+`errors.go`: add `ErrArgTooLong model.Invalid = "crud: argument too long"` and
+`ErrServerOnlyField model.Invalid = "crud: field written only by the server"`.
+
+`validate.go`:
+```go
+// validateReadArgs rejects oversized arguments (never truncates them), caps the limit
+// and validates the typed filter against its schema.
+func validateReadArgs(a *ReadArgs) error {
+	if len(a.ID) > MaxID {
+		return ErrInvalidID
+	}
+	if len(a.Search) > MaxSearch || len(a.After) > MaxAfter {
+		return ErrArgTooLong
+	}
+	a.Limit = Cap(a.Limit)
+	if a.Filter == nil {
+		return nil
+	}
+	return model.ValidateInput(model.ActionCreate, a.Filter)
+}
+```
+`validateCreateBatch(schema []model.Field, list model.ModelSlice, tooMany bool)`: before the schema validation of each
+record, reject any `ServerOnly` field that carries a value:
+```go
+func serverOnlyWritten(schema []model.Field, rec model.Fielder) bool {
+	ptrs := rec.Pointers()
+	for i := range schema {
+		if !schema[i].ServerOnly {
+			continue
+		}
+		ft := schema[i].Type.Storage()
+		switch ft {
+		case model.FieldText, model.FieldRaw:
+			if v, _ := model.ReadStringPtr(ptrs[i]); v != "" {
+				return true
+			}
+		default:
+			if !model.IsZeroPtr(ptrs[i], ft) {
+				return true
+			}
+		}
+	}
+	return false
+}
+```
+→ `if serverOnlyWritten(schema, elem) { return ErrServerOnlyField }`, then replace the current
+`model.Validator` / `model.ValidateFields` branch with `model.ValidateInput(model.ActionCreate, elem)`: a `NotNull` `ServerOnly`
+field (e.g. `tenant_id`) arrives empty and must pass; the module fills it. Grep: `grep -n "ValidateFields\|model.Validator" validate.go` → empty.
+`validateUpdateFields`: after finding `field := &schema[idx]`, `if field.ServerOnly { return ErrServerOnlyField }`.
+
+## Stage 4 — `loopback.go` (new): `crud.Loopback`, port of `webtyp.com/router` v0.4.18 `loopback/loopback.go`
+
+Copy that file into this package as `loopback.go` and change only this:
+- Public API (delete `New`, `WithTenant`, `ActingAs` names and all tenant injection: `tenantID`, `acceptsHasTenant`, the
+  `{"tenant_id":…}` body; nil args always send `{}`):
+```go
+// Loopback is an in-process router.Caller over real modules, for demos, offline apps and tests:
+// same operation names as rpc and mcp ("<ModelName>.<Op(entity, action)>"), no transport and
+// no RBAC. It panics on a wiring mistake (crud.Mount's error) — it only runs in demos and tests.
+//
+//	caller := crud.Loopback(patients)
+func Loopback(mods ...Module) router.Caller { return newLoopback("", mods) }
+
+// LoopbackActingAs is Loopback signed in as userID: operations see it in Caller.UserID.
+//
+//	caller := crud.LoopbackActingAs("u1", payments)
+func LoopbackActingAs(userID string, mods ...Module) router.Caller { return newLoopback(userID, mods) }
+```
+- In `newLoopback`, for each non-nil module: empty `ModelName()` panics with the existing message (prefix `crud: loopback:`);
+  set `reg.module = m.ModelName()`; `if err := Mount(reg, nil, m); err != nil { panic(err.Error()) }`.
+- Rename the unexported types to avoid clashes with stage 2: `registry`→`loopReg`, `opEntry`→`loopOp`, `noopRoute`→`loopRoute`,
+  `caller`→`loopCaller`, `inCtx`→`loopCtx`, `callError`→`loopError`. `loopRoute.Accepts` keeps no state (tenant injection is gone).
+- `crud` already requires `webtyp.com/json` and `webtyp.com/fmt`.
+
+## Stage 5 — tests (`tests/`, external package, `crud.Loopback` replaces `router/loopback` everywhere)
+
+Rewrite `tests/mount_test.go`, `tests/security_test.go`, `tests/args_json_test.go`, `tests/bench_test.go` onto
+`MountOperations(reg crud.Registry)`; every `loopback.New(mod)` → `crud.Loopback(mod)`. Rename the tests
+`TestMountCreate_*`→`TestCreate_*`, `TestMountRead_*`→`TestRead_*`, `TestMountUpdate_*`→`TestUpdate_*`,
+`TestMountDelete_*`→`TestDelete_*`. Change `TestSecurity_SearchTermCapped` and `TestSecurity_CursorAndIDCapped` to expect
+rejection: Search of 257 bytes → error with `model.KindOf == model.ErrorInvalid` and text containing `argument too long`;
+ID of 129 bytes → `crud: empty id` (ErrInvalidID). New tests (setup → call → expected):
+
+| Test (file) | Setup | Call | Expected |
+|---|---|---|---|
+| `TestCaller_UserIDFromSession` (`tests/caller_test.go`) | module whose Create stores `c.UserID` | `crud.LoopbackActingAs("u1", mod).Call(<module>.test_record_c, {records:[{name:"a"}]})` | stored UserID `"u1"` |
+| `TestCaller_AnonymousLoopback` | same | `crud.Loopback(mod)` | stored UserID `""` |
+| `TestRead_FilterDecodedAndValidated` (`tests/filter_test.go`) | entity with filter type `byName{Name string}` (schema `name` Text NotNull) | Call `_r` with `{"filter":{"name":"ana"}}` | read receives `filter.(*byName).Name == "ana"` |
+| `TestRead_FilterInvalidIs400` | same | `{"filter":{"name":""}}` | ErrorInvalid, field `name`; read not called |
+| `TestRead_NilFilter` | `newFilter` nil | `{}` | read receives `filter == nil` |
+| `TestServerOnly_CreateRejected` (`tests/server_only_test.go`) | schema field `owner` with `ServerOnly: true` | create `{records:[{name:"a",owner:"x"}]}` | error text `crud: field written only by the server`; create not called |
+| `TestServerOnly_CreateEmptyAllowed` | same, and `owner` also `NotNull` | `{records:[{name:"a"}]}` | create called (NotNull ServerOnly is not required from the client) |
+| `TestServerOnly_UpdateRejected` | same | update fields `["owner"]` | `crud: field written only by the server` |
+| `TestMount_PublicRead` (`tests/public_test.go`) | collecting `router.OperationRegistry` fake recording Public/Requires per name | `crud.Mount(fake, []model.ModuleNaming{&mockRecord{}}, mod)` | `test_record_r` is Public with no Requires; `test_record_c` Requires(`test_record`, Create) |
+| `TestMount_NotPublicByDefault` | same fake | `crud.Mount(fake, nil, mod)` | `test_record_r` Requires(`test_record`, Read), not Public |
+| `TestMount_NilFunctionIsError` | module calling `reg.Read(&mockRecord{}, nil, nil)` | `crud.Mount(fake, nil, mod)` | `== crud.ErrNilFunction` |
+| `TestMount_RouteHasNoPublic` (compile-level) | `var _ interface{ RequiresMFA() crud.Route; Describe(string) crud.Route } = crud.Route(nil)` and a comment that `Public` does not exist | — | compiles |
+
+Add each test to `docs/TESTS.md` (create if missing: table `Test | Rule`).
+
+## Stage 6 — documentation
+
+`README.md` (≤150 lines; `Why This Exists` with a Without/With: `reg.Operation` + `args.TenantId` vs `MountOperations(reg crud.Registry)`;
+`Before You Start`; `Step-by-Step Guide` with a complete compilable module: entity, `MountOperations` using the four methods,
+a typed filter, `crud.Caller`, `ServerOnly`, a test with `crud.Loopback`; `Documentation Map`). `docs/ARCHITECTURE.md`:
+the flow transport → `crud.Mount` → registry → `validate.go` → module, public reads, why no `Public()` on `Route`.
+Remove from `docs/*` every mention of `MountCreate/MountRead/MountUpdate/MountDelete` and `rpc.WriteError`.
 
 ## Delivery check
 
-```bash
-gotest                                   # green, includes TestCrudImportsNoUI
-test ! -e _temp && test ! -e crud.go
-GOOS=js GOARCH=wasm go list -deps . | grep -x 'webtyp.com/dom' && exit 1 || true
-git diff --stat main                     # go.mod, go.sum, list.go, args.go, errors.go, mount.go, tests/*, README.md, AGENTS.md; crud.go and _temp deleted
-```
+`gotest` passes; `grep -rn "webtyp.com/rpc\|router/loopback\|func Mount\(Create\|Read\|Update\|Delete\)" --include=*.go .` → empty;
+`grep -n "webtyp.com/rpc" go.mod` → empty. A tree that does not compile or whose tests did not run is a failed delivery.
+
+| Stage | Files |
+|---|---|
+| 1 | `contract.go` |
+| 2 | `mount.go`, `op.go`, `create.go`, `read.go`, `update.go`, `delete.go` |
+| 3 | `read.go`, `op.go`, `errors.go`, `validate.go` |
+| 4 | `loopback.go` |
+| 5 | `tests/*.go`, `docs/TESTS.md` |
+| 6 | `README.md`, `docs/ARCHITECTURE.md` |
