@@ -18,7 +18,7 @@ flowchart TD
     APP["webtyp/appkit and the app's config/<br/>chooses the database and injects it; the server main injects httpd"]
 
     CRUD -- "imports" --> MODEL
-    CRUD -- "imports (planned)" --> CHECK
+    CRUD -- "imports" --> CHECK
     CRUD -- "imports" --> ROUTER
     CRUD -- "imports" --> STORAGE
     ORM -- "imports, to implement Store" --> CRUD

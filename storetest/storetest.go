@@ -1,7 +1,6 @@
 package storetest
 
 import (
-	"webtyp.com/fmt"
 	"testing"
 	"webtyp.com/crud"
 	"webtyp.com/model"
