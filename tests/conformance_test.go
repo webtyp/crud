@@ -11,3 +11,7 @@ func TestMemStore(t *testing.T) {
 		return newMemStore()
 	})
 }
+
+func BenchmarkMemStore(b *testing.B) {
+	conformance.RunBenchmarks(b, func(b *testing.B) crud.Store { return newMemStore() })
+}

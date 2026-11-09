@@ -19,7 +19,7 @@ In distributed services and multi-tenant architectures, hand-wiring persistence 
 - Domain rules return [`crud.RuleAnswer`](result.go) (`crud.ApplyAndPublish` or `crud.ApplyWithoutPublishing`).
 - Event subscriptions listen on canonical topics formatted by [`crud.Topic(module, entity, action)`](topic.go) with [`*crud.Change`](change.go) payloads.
 - Transports address operations via [`router.Operation{Module, Entity, Action}`](loopback.go).
-- A `Store` implementation proves itself with `conformance.Run`.
+- A `Store` implementation proves itself with `conformance.Run`: round trips, rollback, a duplicate key, a repeated unique column, a conditional update (`Revision`) and eight goroutines racing for one key, one unique value and one revision — exactly one wins. The factory creates a table for every model of `conformance.Models()`.
 
 ## Step-by-Step Guide
 

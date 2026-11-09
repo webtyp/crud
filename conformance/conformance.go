@@ -1,7 +1,9 @@
 package conformance
 
 import (
+	"sync"
 	"testing"
+
 	"webtyp.com/crud"
 	"webtyp.com/model"
 	"webtyp.com/storage"
@@ -14,10 +16,10 @@ type TestModel struct {
 	UpdatedAt int64
 }
 
-func (m *TestModel) IsNil() bool { return m == nil }
+func (m *TestModel) IsNil() bool                      { return m == nil }
 func (m *TestModel) EncodeFields(w model.FieldWriter) {}
 func (m *TestModel) DecodeFields(r model.FieldReader) {}
-func (m *TestModel) Pointers() []any { return []any{&m.ID, &m.Name, &m.CreatedAt, &m.UpdatedAt} }
+func (m *TestModel) Pointers() []any                  { return []any{&m.ID, &m.Name, &m.CreatedAt, &m.UpdatedAt} }
 func (m *TestModel) Schema() []model.Field {
 	return []model.Field{
 		{Name: "id", Type: model.Text(), DB: &model.FieldDB{PK: true}},
@@ -26,8 +28,70 @@ func (m *TestModel) Schema() []model.Field {
 		{Name: "updated_at", Type: model.Int()},
 	}
 }
-func (m *TestModel) ModelName() string { return "test_model" }
+func (m *TestModel) ModelName() string   { return "test_model" }
 func (m *TestModel) Allow() model.Action { return model.AllActions }
+
+// RevisionModel is the second table of the suite: a unique column and a revision counter, for the duplicate-key and conditional-update clauses.
+type RevisionModel struct {
+	ID       string
+	Name     string
+	Code     string
+	Revision int64
+}
+
+func (m *RevisionModel) IsNil() bool                      { return m == nil }
+func (m *RevisionModel) EncodeFields(w model.FieldWriter) {}
+func (m *RevisionModel) DecodeFields(r model.FieldReader) {}
+func (m *RevisionModel) Pointers() []any                  { return []any{&m.ID, &m.Name, &m.Code, &m.Revision} }
+func (m *RevisionModel) Schema() []model.Field {
+	return []model.Field{
+		{Name: "id", Type: model.Text(), DB: &model.FieldDB{PK: true}},
+		{Name: "name", Type: model.Text()},
+		{Name: "code", Type: model.Text(), DB: &model.FieldDB{Unique: true}},
+		{Name: "revision", Type: model.Int(), DB: &model.FieldDB{Revision: true}},
+	}
+}
+func (m *RevisionModel) ModelName() string   { return "revision_model" }
+func (m *RevisionModel) Allow() model.Action { return model.AllActions }
+
+// Models lists the tables the suite writes. The factory of an implementation creates a table for each before returning the store
+// (an implementation that creates tables on first write, like storage/mem, needs nothing).
+func Models() []model.Model { return []model.Model{&TestModel{}, &RevisionModel{}} }
+
+// writers is how many goroutines race in the concurrency clauses.
+const writers = 8
+
+// race runs fn from `writers` goroutines at the same time and returns what each returned.
+func race(fn func(i int) error) []error {
+	out := make([]error, writers)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			out[i] = fn(i)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	return out
+}
+
+func winners(errs []error) (won, duplicates, other int) {
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			won++
+		case storage.IsDuplicate(err):
+			duplicates++
+		default:
+			other++
+		}
+	}
+	return
+}
 
 func Run(t *testing.T, newStore func(t *testing.T) crud.Store) {
 	t.Run("ReadOneNotFound", func(t *testing.T) {
@@ -111,7 +175,7 @@ func Run(t *testing.T, newStore func(t *testing.T) crud.Store) {
 		if !ok {
 			return
 		}
-			errFail := testErr("fail")
+		errFail := testErr("fail")
 		err := txStore.Atomic(func(tx crud.Tx) error {
 			tx.Create(&TestModel{ID: "4"})
 			return errFail
@@ -121,6 +185,83 @@ func Run(t *testing.T, newStore func(t *testing.T) crud.Store) {
 		}
 		if err := s.ReadOne(&TestModel{}, "4"); model.KindOf(err) != model.ErrorNotFound {
 			t.Errorf("expected not found (rolled back), got %v", err)
+		}
+	})
+	t.Run("DuplicatePrimaryKeyIsReported", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.Create(&TestModel{ID: "dup"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Create(&TestModel{ID: "dup"}); !storage.IsDuplicate(err) {
+			t.Errorf("a second Create of the same key must satisfy storage.IsDuplicate, got %v", err)
+		}
+	})
+	t.Run("DuplicateUniqueColumnIsReported", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.Create(&RevisionModel{ID: "u1", Code: "same"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Create(&RevisionModel{ID: "u2", Code: "same"}); !storage.IsDuplicate(err) {
+			t.Errorf("a repeated unique column must satisfy storage.IsDuplicate, got %v", err)
+		}
+	})
+	t.Run("ConcurrentCreateOfOneKeyHasOneWinner", func(t *testing.T) {
+		s := newStore(t)
+		won, duplicates, other := winners(race(func(int) error { return s.Create(&TestModel{ID: "race"}) }))
+		if won != 1 || duplicates != writers-1 || other != 0 {
+			t.Errorf("%d writers on one key: %d won, %d duplicates, %d other errors; want 1, %d, 0", writers, won, duplicates, other, writers-1)
+		}
+	})
+	t.Run("ConcurrentCreateOfOneUniqueValueHasOneWinner", func(t *testing.T) {
+		s := newStore(t)
+		ids := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+		won, duplicates, other := winners(race(func(i int) error { return s.Create(&RevisionModel{ID: ids[i], Code: "only"}) }))
+		if won != 1 || duplicates != writers-1 || other != 0 {
+			t.Errorf("%d writers on one unique value: %d won, %d duplicates, %d other errors; want 1, %d, 0", writers, won, duplicates, other, writers-1)
+		}
+	})
+	t.Run("ConditionalUpdateAppliesOnlyWhileTheRevisionMatches", func(t *testing.T) {
+		s := newStore(t)
+		cu, ok := s.(crud.ConditionalUpdater)
+		if !ok {
+			t.Skip("the store is not a crud.ConditionalUpdater: it cannot serve an entity with a Revision field")
+		}
+		if err := s.Create(&RevisionModel{ID: "r1", Name: "first", Code: "r1", Revision: 1}); err != nil {
+			t.Fatal(err)
+		}
+		rows, err := cu.UpdateFieldsIf(&RevisionModel{Name: "second", Revision: 2}, "r1", []string{"name", "revision"}, "revision", 1)
+		if err != nil || rows != 1 {
+			t.Fatalf("update from revision 1: rows %d, err %v; want 1, nil", rows, err)
+		}
+		rows, err = cu.UpdateFieldsIf(&RevisionModel{Name: "third", Revision: 2}, "r1", []string{"name", "revision"}, "revision", 1)
+		if err != nil || rows != 0 {
+			t.Fatalf("a stale update from revision 1: rows %d, err %v; want 0, nil", rows, err)
+		}
+		got := &RevisionModel{}
+		if err := s.ReadOne(got, "r1"); err != nil || got.Name != "second" || got.Revision != 2 {
+			t.Errorf("stored row = %+v (%v); want name second, revision 2", got, err)
+		}
+	})
+	t.Run("ConcurrentConditionalUpdatesHaveOneWinner", func(t *testing.T) {
+		s := newStore(t)
+		cu, ok := s.(crud.ConditionalUpdater)
+		if !ok {
+			t.Skip("the store is not a crud.ConditionalUpdater")
+		}
+		if err := s.Create(&RevisionModel{ID: "c1", Code: "c1", Revision: 1}); err != nil {
+			t.Fatal(err)
+		}
+		var mu sync.Mutex
+		applied := int64(0)
+		race(func(int) error {
+			rows, err := cu.UpdateFieldsIf(&RevisionModel{Name: "x", Revision: 2}, "c1", []string{"name", "revision"}, "revision", 1)
+			mu.Lock()
+			applied += rows
+			mu.Unlock()
+			return err
+		})
+		if applied != 1 {
+			t.Errorf("%d concurrent updates from the same revision applied %d times; want exactly 1", writers, applied)
 		}
 	})
 }

@@ -1,0 +1,28 @@
+goos: linux
+goarch: amd64
+pkg: webtyp.com/orm/tests/bench
+cpu: 11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz
+BenchmarkInsert_NoTransaction/SQLite_Memory-16         	  246379	      9880 ns/op	    1769 B/op	      43 allocs/op
+BenchmarkInsert_NoTransaction/SQLite_Memory-16         	  249898	      9697 ns/op	    1769 B/op	      43 allocs/op
+BenchmarkInsert_NoTransaction/SQLite_Memory-16         	  254498	      9628 ns/op	    1769 B/op	      43 allocs/op
+BenchmarkInsert_NoTransaction/SQLite_Memory-16         	  259222	      9906 ns/op	    1769 B/op	      43 allocs/op
+BenchmarkInsert_NoTransaction/SQLite_Memory-16         	  258232	      9599 ns/op	    1769 B/op	      43 allocs/op
+BenchmarkInsert_NoTransaction/SQLite_Memory-16         	  258410	      9612 ns/op	    1769 B/op	      43 allocs/op
+BenchmarkInsert_NoTransaction/SQLite_File-16           	    1922	   1278826 ns/op	    1769 B/op	      42 allocs/op
+BenchmarkInsert_NoTransaction/SQLite_File-16           	    1858	   1290398 ns/op	    1769 B/op	      42 allocs/op
+BenchmarkInsert_NoTransaction/SQLite_File-16           	    1824	   1263943 ns/op	    1769 B/op	      42 allocs/op
+BenchmarkInsert_NoTransaction/SQLite_File-16           	    2005	   1297038 ns/op	    1769 B/op	      42 allocs/op
+BenchmarkInsert_NoTransaction/SQLite_File-16           	    1934	   1268896 ns/op	    1769 B/op	      42 allocs/op
+BenchmarkInsert_NoTransaction/SQLite_File-16           	    1612	   3836211 ns/op	    1767 B/op	      42 allocs/op
+BenchmarkInsert_Transaction/SQLite_Memory-16           	  196696	     12643 ns/op	    2282 B/op	      55 allocs/op
+BenchmarkInsert_Transaction/SQLite_Memory-16           	  192540	     12657 ns/op	    2282 B/op	      55 allocs/op
+BenchmarkInsert_Transaction/SQLite_Memory-16           	  196436	     12471 ns/op	    2282 B/op	      55 allocs/op
+BenchmarkInsert_Transaction/SQLite_Memory-16           	  191676	     12369 ns/op	    2282 B/op	      55 allocs/op
+BenchmarkInsert_Transaction/SQLite_Memory-16           	  199592	     12373 ns/op	    2282 B/op	      55 allocs/op
+BenchmarkInsert_Transaction/SQLite_Memory-16           	  195754	     12440 ns/op	    2282 B/op	      55 allocs/op
+BenchmarkInsert_Transaction/SQLite_File-16             	     195	  10839064 ns/op	    2276 B/op	      54 allocs/op
+BenchmarkInsert_Transaction/SQLite_File-16             	    1872	   1253631 ns/op	    2282 B/op	      54 allocs/op
+BenchmarkInsert_Transaction/SQLite_File-16             	    2006	   1232596 ns/op	    2281 B/op	      54 allocs/op
+BenchmarkInsert_Transaction/SQLite_File-16             	    1868	   1274657 ns/op	    2282 B/op	      54 allocs/op
+BenchmarkInsert_Transaction/SQLite_File-16             	    2017	   1231725 ns/op	    2281 B/op	      54 allocs/op
+BenchmarkInsert_Transaction/SQLite_File-16             	    1946	   1274078 ns/op	    2281 B/op	      54 allocs/op

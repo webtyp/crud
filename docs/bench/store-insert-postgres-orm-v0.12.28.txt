@@ -1,0 +1,12 @@
+BenchmarkInsert_NoTransaction/Postgres-16         	    7086	    353263 ns/op	    2242 B/op	      54 allocs/op
+BenchmarkInsert_NoTransaction/Postgres-16         	    6580	    352664 ns/op	    2241 B/op	      54 allocs/op
+BenchmarkInsert_NoTransaction/Postgres-16         	    7046	    351168 ns/op	    2241 B/op	      54 allocs/op
+BenchmarkInsert_NoTransaction/Postgres-16         	    6372	    351067 ns/op	    2242 B/op	      54 allocs/op
+BenchmarkInsert_NoTransaction/Postgres-16         	    7210	    350988 ns/op	    2242 B/op	      54 allocs/op
+BenchmarkInsert_NoTransaction/Postgres-16         	    6453	    357887 ns/op	    2241 B/op	      54 allocs/op
+BenchmarkInsert_Transaction/Postgres-16           	    6076	    402693 ns/op	    2881 B/op	      73 allocs/op
+BenchmarkInsert_Transaction/Postgres-16           	    5860	    404000 ns/op	    2874 B/op	      73 allocs/op
+BenchmarkInsert_Transaction/Postgres-16           	    6020	    401505 ns/op	    2878 B/op	      73 allocs/op
+BenchmarkInsert_Transaction/Postgres-16           	    5062	    400127 ns/op	    2874 B/op	      73 allocs/op
+BenchmarkInsert_Transaction/Postgres-16           	    6184	    404170 ns/op	    2872 B/op	      73 allocs/op
+BenchmarkInsert_Transaction/Postgres-16           	    6130	    402576 ns/op	    2876 B/op	      73 allocs/op

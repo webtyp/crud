@@ -6,7 +6,9 @@ import (
 	"strings"
 	"sync"
 	"webtyp.com/crud"
+	"webtyp.com/fmt"
 	"webtyp.com/model"
+	"webtyp.com/storage"
 )
 
 type memStore struct {
@@ -77,6 +79,19 @@ func (s *memStore) Create(rec model.Model) error {
 		}
 	}
 	id := model.JoinKey(parts...)
+	if _, exists := s.rows[id]; exists {
+		return storage.Duplicate(fmt.Err("memstore: duplicate key", id))
+	}
+	for _, f := range schema {
+		if !f.IsUnique() {
+			continue
+		}
+		for _, other := range s.rows {
+			if value, present := other[f.Name]; present && value == row[f.Name] && row[f.Name] != "" {
+				return storage.Duplicate(fmt.Err("memstore: duplicate value in", f.Name))
+			}
+		}
+	}
 	s.rows[id] = row
 	return nil
 }
