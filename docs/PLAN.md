@@ -2,6 +2,8 @@
 PLAN: "refactor!: crud validates, the handler answers crud.RuleAnswer, crud publishes after commit; Caller becomes CurrentUser; Module.Definition is checked at Mount"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 2711075742698173289
 ---
 
 > Read AGENTS.md at the repo root before any change.
