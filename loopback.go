@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"webtyp.com/events"
 	"webtyp.com/fmt"
 	"webtyp.com/json"
 	"webtyp.com/model"
@@ -8,18 +9,22 @@ import (
 )
 
 // Loopback is an in-process router.Caller over real modules, for demos, offline apps and tests:
-// same operation names as rpc and mcp ("<ModelName>.<Op(entity, action)>"), no transport and
-// no RBAC. It panics on a wiring mistake (crud.Mount's error) — it only runs in demos and tests.
+// operations are addressed by router.Operation, no transport and no RBAC. pub receives the events crud publishes after each
+// commit (nil: nobody listens). It panics on a wiring mistake (crud.Mount's error) — it only runs in demos and tests.
 //
-//	caller := crud.Loopback(patients)
-func Loopback(mods ...Module) router.Caller { return newLoopbackCaller("", mods) }
+//	caller := crud.Loopback(nil, patients)
+func Loopback(pub events.Publisher, mods ...Module) router.Caller {
+	return newLoopbackCaller(pub, "", mods)
+}
 
 // LoopbackActingAs is Loopback signed in as userID: operations see it in CurrentUser.UserID.
 //
-//	caller := crud.LoopbackActingAs("u1", payments)
-func LoopbackActingAs(userID string, mods ...Module) router.Caller { return newLoopbackCaller(userID, mods) }
+//	caller := crud.LoopbackActingAs(broker, "u1", payments)
+func LoopbackActingAs(pub events.Publisher, userID string, mods ...Module) router.Caller {
+	return newLoopbackCaller(pub, userID, mods)
+}
 
-func newLoopbackCaller(userID string, mods []Module) router.Caller {
+func newLoopbackCaller(pub events.Publisher, userID string, mods []Module) router.Caller {
 	reg := &loopbackRegistry{}
 	for _, m := range mods {
 		if m == nil {
@@ -29,8 +34,7 @@ func newLoopbackCaller(userID string, mods []Module) router.Caller {
 		if name == "" {
 			panic("crud: loopback: a module returned an empty ModelName() — every operation must be qualified by its owning module")
 		}
-		reg.module = name
-		if err := Mount(reg, nil, m); err != nil {
+		if err := Mount(reg, nil, pub, m); err != nil {
 			panic(err.Error())
 		}
 	}
@@ -38,24 +42,22 @@ func newLoopbackCaller(userID string, mods []Module) router.Caller {
 }
 
 type loopbackRegistry struct {
-	ops    []loopbackOperation
-	module string
+	ops []loopbackOperation
 }
 
 type loopbackOperation struct {
-	name string
-	h    router.HandlerFunc
+	op router.Operation
+	h  router.HandlerFunc
 }
 
-func (r *loopbackRegistry) Operation(name string, h router.HandlerFunc) router.Route {
-	qualified := r.module + "." + name
-	r.ops = append(r.ops, loopbackOperation{name: qualified, h: h})
+func (r *loopbackRegistry) Operation(op router.Operation, h router.HandlerFunc) router.Route {
+	r.ops = append(r.ops, loopbackOperation{op: op, h: h})
 	return loopbackRoute{}
 }
 
-func (r *loopbackRegistry) find(name string) (loopbackOperation, bool) {
+func (r *loopbackRegistry) find(op router.Operation) (loopbackOperation, bool) {
 	for i := range r.ops {
-		if r.ops[i].name == name {
+		if r.ops[i].op == op {
 			return r.ops[i], true
 		}
 	}
@@ -80,11 +82,11 @@ type loopbackCaller struct {
 	userID string
 }
 
-func (c *loopbackCaller) Call(op string, args model.Encodable, into model.Decodable, done func(err error)) {
+func (c *loopbackCaller) Call(op router.Operation, args model.Encodable, into model.Decodable, done func(err error)) {
 	entry, ok := c.reg.find(op)
 	if !ok {
 		if done != nil {
-			done(fmt.Err("loopback", "unknown", "operation", op))
+			done(fmt.Err("loopback", "unknown", "operation", op.String()))
 		}
 		return
 	}
@@ -122,7 +124,7 @@ func (c *loopbackCaller) Call(op string, args model.Encodable, into model.Decoda
 	}
 }
 
-func (c *loopbackCaller) Dispatch(op string, args model.Encodable) {
+func (c *loopbackCaller) Dispatch(op router.Operation, args model.Encodable) {
 	c.Call(op, args, nil, nil)
 }
 

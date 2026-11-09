@@ -2,7 +2,6 @@ package crud
 
 import (
 	"webtyp.com/fmt"
-
 	"webtyp.com/model"
 )
 
@@ -16,25 +15,6 @@ const (
 
 // statusNoContent answers an update or delete: the client decodes nothing.
 const statusNoContent = 204
-
-// Op builds the canonical bare operation name for a model and one of the four model.Action verbs
-// ("<ModelName>_<action>", e.g. "room_floor_c", "room_floor_r", "room_floor_u", "room_floor_d").
-// It uses "_" rather than "." so the qualified operation name "<Module>.<Op>" contains a single dot
-// as required by rpc.Caller ("<module>.<op>").
-func Op(m model.ModuleNaming, action model.Action) string {
-	switch action {
-	case model.Create:
-		return m.ModelName() + "_c"
-	case model.Read:
-		return m.ModelName() + "_r"
-	case model.Update:
-		return m.ModelName() + "_u"
-	case model.Delete:
-		return m.ModelName() + "_d"
-	default:
-		return m.ModelName() + "_" + action.String()
-	}
-}
 
 func decodeTextList(r model.FieldReader, key string, one *[1]string) (out []string, tooMany bool, hasEmpty bool) {
 	arr, ok := r.Array(key)

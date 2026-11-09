@@ -61,9 +61,15 @@ func (a *ReadArgs) EncodeFields(w model.FieldWriter) {
 	if a.ID != "" {
 		w.String("id", a.ID)
 	}
-	w.String("search", a.Search)
-	w.String("after", a.After)
-	w.Int("limit", a.Limit)
+	if a.Search != "" {
+		w.String("search", a.Search)
+	}
+	if a.After != "" {
+		w.String("after", a.After)
+	}
+	if a.Limit != 0 {
+		w.Int("limit", a.Limit)
+	}
 	if a.Filter != nil {
 		w.Object(keyFilter, a.Filter)
 	}
@@ -111,7 +117,10 @@ func (r *operationMounter) AddReadOnlyEntity(m model.ModuleNaming, newFilter fun
 			}
 		}
 	}
-	rt := r.reg.Operation(Op(m, model.Read), h)
+	if r.reg == nil {
+		return mountedRoute{}
+	}
+	rt := r.reg.Operation(router.Operation{Module: r.module, Entity: m.ModelName(), Action: model.Read}, h)
 	if r.isPublicAction(m.ModelName(), model.Read) {
 		rt.Public()
 	} else {

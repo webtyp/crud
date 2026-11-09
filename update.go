@@ -7,7 +7,7 @@ import (
 // UpdateArgs is what a client sends to patch fields (and what Update decodes on the server):
 // which rows, which columns, and a record carrying the values.
 //
-// Example: caller.Call(crud.Op(&Device{}, model.Update), &crud.UpdateArgs{IDs: ids, Fields: fields, Record: rec}, nil, done)
+// Example: caller.Call(router.Operation{Module: "device_manager", Entity: "device", Action: model.Update}, &crud.UpdateArgs{IDs: ids, Fields: fields, Record: rec}, nil, done)
 type UpdateArgs struct {
 	IDs      []string
 	Fields   []string

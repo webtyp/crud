@@ -6,7 +6,7 @@ import (
 
 // CreateArgs is what a client sends to a create operation: whole records, persisted in one transactional batch.
 //
-// Example: caller.Call(crud.Op(&Device{}, model.Create), &crud.CreateArgs{Records: recs}, saved, done)
+// Example: caller.Call(router.Operation{Module: "device_manager", Entity: "device", Action: model.Create}, &crud.CreateArgs{Records: recs}, saved, done)
 type CreateArgs struct{ Records []model.Model }
 
 func (a *CreateArgs) IsNil() bool { return a == nil }

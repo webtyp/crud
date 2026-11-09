@@ -117,17 +117,20 @@ func (r *operationMounter) AddStoredEntity(entity StoredEntity) {
 		if !allow.Has(action) {
 			return
 		}
-		op := r.reg.Operation(Op(entity.Model, action), h)
+		if r.reg == nil {
+			return
+		}
+		rt := r.reg.Operation(router.Operation{Module: r.module, Entity: modelName, Action: action}, h)
 		if r.isPublicAction(modelName, action) {
-			op.Public()
+			rt.Public()
 		} else {
-			op.Requires(model.Resource(modelName), action)
+			rt.Requires(model.Resource(modelName), action)
 		}
 		if action == model.Create || action == model.Update {
-			op.Accepts(entity.Model)
+			rt.Accepts(entity.Model)
 		}
 		if entity.MFA.Has(action) {
-			op.RequiresMFA()
+			rt.RequiresMFA()
 		}
 
 		var actionStr string
@@ -137,7 +140,7 @@ func (r *operationMounter) AddStoredEntity(entity StoredEntity) {
 		case model.Update: actionStr = "Update"
 		case model.Delete: actionStr = "Delete"
 		}
-		op.Describe(actionStr + " " + modelName)
+		rt.Describe(actionStr + " " + modelName)
 	}
 
 	mountAction(model.Create, createRecordsHandler(entity, publisher, schemaFields, keyFields, createdAtField, updatedAtField))

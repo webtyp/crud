@@ -7,7 +7,7 @@ import (
 // DeleteArgs is what a client sends to a delete operation (and what Delete decodes on the server):
 // the ids to remove.
 //
-// Example: caller.Call(crud.Op(&Device{}, model.Delete), &crud.DeleteArgs{IDs: ids}, nil, done)
+// Example: caller.Call(router.Operation{Module: "device_manager", Entity: "device", Action: model.Delete}, &crud.DeleteArgs{IDs: ids}, nil, done)
 type DeleteArgs struct {
 	IDs      []string
 	one      [1]string
