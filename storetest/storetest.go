@@ -112,7 +112,7 @@ func Run(t *testing.T, newStore func(t *testing.T) crud.Store) {
 		if !ok {
 			return
 		}
-		errFail := fmt.Err("fail")
+			errFail := testErr("fail")
 		err := txStore.Atomic(func(tx crud.Tx) error {
 			tx.Create(&TestModel{ID: "4"})
 			return errFail
@@ -125,3 +125,7 @@ func Run(t *testing.T, newStore func(t *testing.T) crud.Store) {
 		}
 	})
 }
+
+type testErr string
+
+func (e testErr) Error() string { return string(e) }
