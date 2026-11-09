@@ -31,3 +31,20 @@ func TestReadArgs_RoundTrip(t *testing.T) {
 		t.Errorf("ReadArgs round trip: got %+v, want %+v", out, in)
 	}
 }
+
+func TestReadArgs_EncodesOnlySetFields(t *testing.T) {
+	wEmpty := &recordingFieldWriter{}
+	empty := crud.ReadArgs{}
+	empty.EncodeFields(wEmpty)
+	if len(wEmpty.objects) != 0 || len(wEmpty.arrays) != 0 || len(wEmpty.strs) != 0 {
+		t.Errorf("expected no fields encoded for empty ReadArgs, got objects=%v arrays=%v", wEmpty.objects, wEmpty.arrays)
+	}
+
+	wSearch := &recordingFieldWriter{}
+	searchOnly := crud.ReadArgs{Search: "x"}
+	searchOnly.EncodeFields(wSearch)
+	// it writes only search as String("search", "x")
+	if len(wSearch.objects) != 0 || len(wSearch.arrays) != 0 {
+		t.Errorf("expected no objects/arrays for searchOnly, got objects=%v arrays=%v", wSearch.objects, wSearch.arrays)
+	}
+}
