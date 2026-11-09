@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"webtyp.com/events"
 	"webtyp.com/model"
 	"webtyp.com/router"
 )
@@ -28,9 +29,12 @@ func Mount(reg router.OperationRegistry, public []Public, m Module) error {
 }
 
 type operationMounter struct {
-	reg    router.OperationRegistry
-	public []Public
-	err    error
+	reg             router.OperationRegistry
+	public          []Public
+	pub             events.Publisher // nil: nobody listens
+	module          string           // the module's ModelName()
+	mountedEntities []string         // every entity mounted by AddStoredEntity or AddReadOnlyEntity, in order
+	err             error
 }
 
 func (r *operationMounter) failMount(err error) Route {
@@ -49,7 +53,7 @@ func (r *operationMounter) isPublicAction(name string, action model.Action) bool
 	return false
 }
 
-// route wraps router.Route so the module only sees RequiresMFA and Describe.
+// mountedRoute wraps router.Route so the module only sees RequiresMFA and Describe.
 type mountedRoute struct{ r router.Route }
 
 func (x mountedRoute) RequiresMFA() Route         { x.r.RequiresMFA(); return x }

@@ -1,13 +1,13 @@
 package crud
 
 import (
+	"webtyp.com/fmt"
 	"webtyp.com/model"
 	"webtyp.com/router"
 	"webtyp.com/time"
-	"webtyp.com/fmt"
 )
 
-func updateRecordsHandler(entity Table, schemaFields []model.Field, keyFields []int, updatedAtField int) func(ctx router.Context) {
+func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaFields []model.Field, keyFields []int, updatedAtField int) func(ctx router.Context) {
 	return func(ctx router.Context) {
 		request := UpdateArgs{Record: entity.NewList().Append().(model.Model)}
 		if err := ctx.Decode(&request); err != nil {
@@ -39,7 +39,7 @@ func updateRecordsHandler(entity Table, schemaFields []model.Field, keyFields []
 			}
 		}
 
-		caller := currentUserOf(ctx)
+		currentUser := currentUserOf(ctx)
 		fields := request.Fields
 		if updatedAtField >= 0 {
 			hasUpdated := false
@@ -54,8 +54,9 @@ func updateRecordsHandler(entity Table, schemaFields []model.Field, keyFields []
 			}
 		}
 
+		ruleAnswers := make([]RuleAnswer, len(request.IDs))
 		err := inTransaction(entity.Store, func(tx Tx) error {
-			for _, id := range request.IDs {
+			for i, id := range request.IDs {
 				old := entity.NewList().Append().(model.Model)
 				if err := tx.ReadOne(old, id); err != nil {
 					return err
@@ -67,14 +68,21 @@ func updateRecordsHandler(entity Table, schemaFields []model.Field, keyFields []
 				if updatedAtField >= 0 {
 					setIntField(next, updatedAtField, int64(time.NowNano()))
 				}
+				answer := ApplyAndPublish // a HaveNoBusinessRule action is plain storage: it always announces
 				if entity.Update != nil {
-					if err := entity.Update(caller, tx, old, next, request.Fields); err != nil {
+					res, err := entity.Update(currentUser, tx, old, next, request.Fields)
+					if err != nil {
 						return err
 					}
+					if !res.valid() {
+						return ErrNoAnswer
+					}
+					answer = res
 				}
 				if err := tx.UpdateFields(next, id, fields); err != nil {
 					return err
 				}
+				ruleAnswers[i] = answer
 			}
 			return nil
 		})
@@ -84,12 +92,17 @@ func updateRecordsHandler(entity Table, schemaFields []model.Field, keyFields []
 			return
 		}
 
-		if entity.Committed != nil {
-			for _, id := range request.IDs {
-				next := request.Record
-				setKeyValue(next, keyFields, id)
-				entity.Committed(caller, model.Update, next, request.Fields)
+		for i, id := range request.IDs {
+			if ruleAnswers[i] != ApplyAndPublish {
+				continue
 			}
+			rec := entity.NewList().Append().(model.Model)
+			copyRecord(request.Record, rec)
+			if err := setKeyValue(rec, keyFields, id); err != nil {
+				router.WriteError(ctx, err)
+				return
+			}
+			publisher.publish(model.Update, &Change{Record: rec, Fields: request.Fields})
 		}
 
 		ctx.WriteStatus(statusNoContent)

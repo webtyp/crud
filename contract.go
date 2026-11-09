@@ -23,24 +23,29 @@ type Route interface {
 
 // Registry is the only thing a module receives in MountOperations: the standard operations.
 type Registry interface {
-	// Table mounts the actions t.Model allows, persisted by t.Store. ormc's Mount<Entity> is its only caller.
-	Table(t Table)
-	// Read mounts a read of a model that is not a table (a report, a derived view), answered by read.
-	Read(m model.ModuleNaming, newFilter func() model.Model, read func(c CurrentUser, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route
+	// AddStoredEntity mounts the actions entity.Model allows, persisted by entity.Store.
+	AddStoredEntity(entity StoredEntity)
+	// AddReadOnlyEntity mounts a read of a model that is not a table (a report, a derived view), answered by read.
+	AddReadOnlyEntity(m model.ModuleNaming, newFilter func() model.Model, read func(c CurrentUser, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route
 }
 
-// Table is one table a module offers. ormc builds it from typed hooks; a hook is nil when the module has no rule.
-type Table struct {
-	Model     model.Model            // a zero record; must implement model.Allower with Allow() != 0
-	NewList   func() model.ModelSlice
-	Store     Store
-	Create    func(c CurrentUser, tx Tx, rec model.Model) error                       // per record, before insert, inside the transaction
-	Update    func(c CurrentUser, tx Tx, old, next model.Model, fields []string) error // per id; old is the stored row, next carries only fields
-	Delete    func(c CurrentUser, tx Tx, rec model.Model) error                       // per id, before delete; rec is the stored row
-	Search    func(c CurrentUser, text string) ([]storage.Condition, error)          // replaces the default search; AND-only conditions
-	NewFilter func() model.Model                                                 // typed filter; equality on its non-empty fields
-	Committed func(c CurrentUser, action model.Action, rec model.Model, fields []string) // after commit, once per record (events); fields = the updated fields on Update, nil otherwise
-	MFA       model.Action                                                       // actions that require a second factor
+// StoredEntity is one entity a module offers and crud stores through a Store. definitionc builds it from the model's Rules and the module's rules; a hook is nil
+// exactly when its action is declared model.HaveNoBusinessRule (plain storage) — StoredEntity checks this at mount.
+type StoredEntity struct {
+	Model   model.Model // a zero record; must implement model.Allower with Allow() != 0
+	NewList func() model.ModelSlice
+	Store   Store
+	// Rules is the model's declared Rules (PatientModel.Rules). A AddMyBusinessRule action needs its hook, a HaveNoBusinessRule action must have none.
+	Rules model.Rules
+	// Create runs per record, before the insert, inside the transaction. It answers whether to announce (crud.ApplyAndPublish or crud.ApplyWithoutPublishing).
+	Create func(a CurrentUser, tx Tx, rec model.Model) (RuleAnswer, error)
+	// Update runs per id; old is the stored row and next carries only fields.
+	Update func(a CurrentUser, tx Tx, old, next model.Model, fields []string) (RuleAnswer, error)
+	// Delete runs per id, before the delete; rec is the stored row.
+	Delete func(a CurrentUser, tx Tx, rec model.Model) (RuleAnswer, error)
+	// Search replaces the default search: AND-only conditions. Declared with Rules.Read == model.AddMyBusinessRule.
+	Search func(a CurrentUser, text string) ([]storage.Condition, error)
+	MFA    model.Action // actions that require a second factor
 }
 
 // Public is one action the app opens to visitors without a session (reads and writes). Only the app lists them.

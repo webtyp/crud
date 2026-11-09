@@ -1,12 +1,12 @@
 package crud
 
 import (
+	"webtyp.com/fmt"
 	"webtyp.com/model"
 	"webtyp.com/router"
-	"webtyp.com/fmt"
 )
 
-func deleteRecordsHandler(entity Table, keyFields []int) func(ctx router.Context) {
+func deleteRecordsHandler(entity StoredEntity, publisher eventPublisher, keyFields []int) func(ctx router.Context) {
 	return func(ctx router.Context) {
 		var request DeleteArgs
 		if err := ctx.Decode(&request); err != nil {
@@ -34,24 +34,34 @@ func deleteRecordsHandler(entity Table, keyFields []int) func(ctx router.Context
 			}
 		}
 
-		caller := currentUserOf(ctx)
+		currentUser := currentUserOf(ctx)
 		var deleted []model.Model
+		var ruleAnswers []RuleAnswer
 
 		err := inTransaction(entity.Store, func(tx Tx) error {
+			deleted = deleted[:0]
+			ruleAnswers = ruleAnswers[:0]
 			for _, id := range request.IDs {
 				old := entity.NewList().Append().(model.Model)
 				if err := tx.ReadOne(old, id); err != nil {
 					return err
 				}
+				answer := ApplyAndPublish // a HaveNoBusinessRule action is plain storage: it always announces
 				if entity.Delete != nil {
-					if err := entity.Delete(caller, tx, old); err != nil {
+					res, err := entity.Delete(currentUser, tx, old)
+					if err != nil {
 						return err
 					}
+					if !res.valid() {
+						return ErrNoAnswer
+					}
+					answer = res
 				}
 				if err := tx.Delete(old, id); err != nil {
 					return err
 				}
 				deleted = append(deleted, old)
+				ruleAnswers = append(ruleAnswers, answer)
 			}
 			return nil
 		})
@@ -61,9 +71,9 @@ func deleteRecordsHandler(entity Table, keyFields []int) func(ctx router.Context
 			return
 		}
 
-		if entity.Committed != nil {
-			for _, row := range deleted {
-				entity.Committed(caller, model.Delete, row, nil)
+		for i, row := range deleted {
+			if ruleAnswers[i] == ApplyAndPublish {
+				publisher.publish(model.Delete, &Change{Record: row})
 			}
 		}
 

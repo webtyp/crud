@@ -3,31 +3,32 @@ package crud
 import (
 	"webtyp.com/fmt"
 	"webtyp.com/model"
+	"webtyp.com/definitioncheck"
 	"webtyp.com/router"
 )
 
 const (
-	ErrNothingAllowed mountError = "crud: Table for a model that allows nothing; set Allow in its model.Definition"
-	ErrNoStore        mountError = "crud: Table without a Store; pass orm.TenantStore(db, tenantID, ids)"
+	ErrNothingAllowed mountError = "crud: StoredEntity for a model that allows nothing; set Allow in its model.Definition"
+	ErrNoStore        mountError = "crud: StoredEntity without a Store; pass orm.TenantStore(db, tenantID, ids)"
 	ErrHookWithoutAction mountError = "crud: a rule is set for an action the model does not allow"
-	ErrNoPrimaryKey   mountError = "crud: Table model has no primary key field"
+	ErrNoPrimaryKey   mountError = "crud: StoredEntity model has no primary key field"
 	ErrStampNotInt    mountError = "crud: created_at/updated_at must be an int64 nanosecond field"
 	ErrKeyKind        mountError = "crud: a primary key field must be text or int64"
 	ErrKeyHasSeparator model.Invalid = "crud: a key value cannot contain /"
 	ErrBatchNotAtomic  model.Invalid = "crud: the resource saves one record at a time; send one record per request"
 	ErrOrCondition     model.Invalid = "crud: a search returned an OR condition; conditions are not grouped, so an OR could read other tenants' rows — return AND conditions only"
-	ErrNoSearchField   model.Invalid = "crud: the table has no searchable field"
+	ErrNoSearchField   model.Invalid = "crud: the entity has no searchable field"
 
 	//lang:ignore
 	ErrAfter = "crud: After pages "
 	ErrAfterWithOrder  model.Invalid = ErrAfter + "by primary key; it cannot be combined with another Order"
-	ErrAfterCompositeKey model.Invalid = ErrAfter + "by a single-column key; list the table whole (its screen uses view.Page{First: view.All})"
+	ErrAfterCompositeKey model.Invalid = ErrAfter + "by a single-column key; list the entity whole (its screen uses view.Page{First: view.All})"
 
 	FieldCreatedAt = "created_at"
 	FieldUpdatedAt = "updated_at"
 )
 
-func (r *operationMounter) Table(entity Table) {
+func (r *operationMounter) AddStoredEntity(entity StoredEntity) {
 	if entity.Model == nil || entity.NewList == nil {
 		r.failMount(ErrNilFunction)
 		return
@@ -54,10 +55,22 @@ func (r *operationMounter) Table(entity Table) {
 		r.failMount(ErrHookWithoutAction)
 		return
 	}
-	if (entity.Search != nil || entity.NewFilter != nil) && !allow.Has(model.Read) {
+	if entity.Search != nil && !allow.Has(model.Read) {
 		r.failMount(ErrHookWithoutAction)
 		return
 	}
+
+	def := model.Definition{Name: entity.Model.ModelName(), Allow: allow, Rules: entity.Rules}
+	if err := definitioncheck.CheckRules(def); err != nil {
+		r.failMount(err)
+		return
+	}
+	if bad := mismatchedHookActions(entity); bad != 0 {
+		r.failMount(&outOfDateError{module: r.module, entity: def.Name, what: whatRules, actions: bad})
+		return
+	}
+	r.mountedEntities = append(r.mountedEntities, def.Name)
+	publisher := eventPublisher{pub: r.pub, module: r.module, entity: def.Name}
 
 	schemaFields := entity.Model.Schema()
 	keyFields := keyFieldIndexes(schemaFields)
@@ -127,9 +140,9 @@ func (r *operationMounter) Table(entity Table) {
 		op.Describe(actionStr + " " + modelName)
 	}
 
-	mountAction(model.Create, createRecordsHandler(entity, schemaFields, keyFields, createdAtField, updatedAtField))
-	mountAction(model.Update, updateRecordsHandler(entity, schemaFields, keyFields, updatedAtField))
-	mountAction(model.Delete, deleteRecordsHandler(entity, keyFields))
+	mountAction(model.Create, createRecordsHandler(entity, publisher, schemaFields, keyFields, createdAtField, updatedAtField))
+	mountAction(model.Update, updateRecordsHandler(entity, publisher, schemaFields, keyFields, updatedAtField))
+	mountAction(model.Delete, deleteRecordsHandler(entity, publisher, keyFields))
 	mountAction(model.Read, readRecordsHandler(entity, schemaFields))
 }
 
@@ -209,4 +222,21 @@ func keyHasSeparator(rec model.Model, keyFields []int) bool {
 		}
 	}
 	return false
+}
+
+
+// mismatchedHookActions returns the actions whose declared rule and connected hook disagree: AddMyBusinessRule without its hook, or a hook for a
+// HaveNoBusinessRule action. Search is the Read hook.
+func mismatchedHookActions(entity StoredEntity) model.Action {
+	var bad model.Action
+	check := func(a model.Action, hooked bool) {
+		if (entity.Rules.Of(a) == model.AddMyBusinessRule) != hooked {
+			bad |= a
+		}
+	}
+	check(model.Create, entity.Create != nil)
+	check(model.Update, entity.Update != nil)
+	check(model.Delete, entity.Delete != nil)
+	check(model.Read, entity.Search != nil)
+	return bad
 }

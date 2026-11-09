@@ -8,17 +8,9 @@ import (
 	"webtyp.com/storage"
 )
 
-func readRecordsHandler(entity Table, schemaFields []model.Field) func(ctx router.Context) {
+func readRecordsHandler(entity StoredEntity, schemaFields []model.Field) func(ctx router.Context) {
 	return func(ctx router.Context) {
-		var filter model.Model
-		if entity.NewFilter != nil {
-			filter = entity.NewFilter()
-		}
-
 		args := ReadArgs{}
-		if filter != nil {
-			args.Filter = filter
-		}
 		if err := ctx.Decode(&args); err != nil {
 			router.WriteError(ctx, ErrCannotRead)
 			return
@@ -48,12 +40,12 @@ func readRecordsHandler(entity Table, schemaFields []model.Field) func(ctx route
 			return
 		}
 
-		caller := currentUserOf(ctx)
+		currentUser := currentUserOf(ctx)
 		var conds []storage.Condition
 
 		if args.Search != "" {
 			if entity.Search != nil {
-				hooks, err := entity.Search(caller, args.Search)
+				hooks, err := entity.Search(currentUser, args.Search)
 				if err != nil {
 					router.WriteError(ctx, err)
 					return
@@ -78,27 +70,6 @@ func readRecordsHandler(entity Table, schemaFields []model.Field) func(ctx route
 					return
 				}
 				conds = append(conds, storage.Like(labelField, "%"+fmt.ToLower(args.Search)+"%"))
-			}
-		}
-
-		if filter != nil {
-			ptrs := filter.Pointers()
-			fschema := filter.Schema()
-			for i, f := range fschema {
-				switch v := ptrs[i].(type) {
-				case *string:
-					if *v != "" {
-						conds = append(conds, storage.Eq(f.Name, *v))
-					}
-				case *int64:
-					if *v != 0 {
-						conds = append(conds, storage.Eq(f.Name, *v))
-					}
-				case *bool:
-					if *v {
-						conds = append(conds, storage.Eq(f.Name, *v))
-					}
-				}
 			}
 		}
 

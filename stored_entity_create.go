@@ -6,7 +6,7 @@ import (
 	"webtyp.com/time"
 )
 
-func createRecordsHandler(entity Table, schemaFields []model.Field, keyFields []int, createdAtField, updatedAtField int) func(ctx router.Context) {
+func createRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaFields []model.Field, keyFields []int, createdAtField, updatedAtField int) func(ctx router.Context) {
 	return func(ctx router.Context) {
 		request := createRequest{list: entity.NewList()}
 		if err := ctx.Decode(&request); err != nil {
@@ -25,8 +25,9 @@ func createRecordsHandler(entity Table, schemaFields []model.Field, keyFields []
 			}
 		}
 
-		caller := currentUserOf(ctx)
+		currentUser := currentUserOf(ctx)
 		alreadyStored := make([]bool, request.list.Len())
+		ruleAnswers := make([]RuleAnswer, request.list.Len())
 		now := int64(time.NowNano())
 
 		err := inTransaction(entity.Store, func(tx Tx) error {
@@ -57,17 +58,28 @@ func createRecordsHandler(entity Table, schemaFields []model.Field, keyFields []
 					}
 				}
 
-				if createdAtField >= 0 { setIntField(rec, createdAtField, now) }
-				if updatedAtField >= 0 { setIntField(rec, updatedAtField, now) }
+				if createdAtField >= 0 {
+					setIntField(rec, createdAtField, now)
+				}
+				if updatedAtField >= 0 {
+					setIntField(rec, updatedAtField, now)
+				}
 
+				answer := ApplyAndPublish // a HaveNoBusinessRule action is plain storage: it always announces
 				if entity.Create != nil {
-					if err := entity.Create(caller, tx, rec); err != nil {
+					res, err := entity.Create(currentUser, tx, rec)
+					if err != nil {
 						return err
 					}
+					if !res.valid() {
+						return ErrNoAnswer
+					}
+					answer = res
 				}
 				if err := tx.Create(rec); err != nil {
 					return err
 				}
+				ruleAnswers[i] = answer
 			}
 			return nil
 		})
@@ -77,11 +89,9 @@ func createRecordsHandler(entity Table, schemaFields []model.Field, keyFields []
 			return
 		}
 
-		if entity.Committed != nil {
-			for i := 0; i < request.list.Len(); i++ {
-				if !alreadyStored[i] {
-					entity.Committed(caller, model.Create, request.list.At(i).(model.Model), nil)
-				}
+		for i := 0; i < request.list.Len(); i++ {
+			if !alreadyStored[i] && ruleAnswers[i] == ApplyAndPublish {
+				publisher.publish(model.Create, &Change{Record: request.list.At(i).(model.Model)})
 			}
 		}
 

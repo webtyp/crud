@@ -79,13 +79,14 @@ func (a *ReadArgs) DecodeFields(r model.FieldReader) {
 	}
 }
 
-func (r *operationMounter) Read(m model.ModuleNaming, newFilter func() model.Model, read func(c CurrentUser, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route {
+func (r *operationMounter) AddReadOnlyEntity(m model.ModuleNaming, newFilter func() model.Model, read func(c CurrentUser, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route {
 	if m == nil || read == nil {
 		return r.failMount(ErrNilFunction)
 	}
 	if m.ModelName() == "" {
 		return r.failMount(ErrEmptyModelName)
 	}
+	r.mountedEntities = append(r.mountedEntities, m.ModelName())
 	h := func(ctx router.Context) {
 		args := ReadArgs{}
 		if newFilter != nil {
