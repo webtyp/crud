@@ -113,7 +113,7 @@ func validateUpdateFields(schema []model.Field, fields []string, rec model.Model
 			return ErrUnknownField
 		}
 		field := &schema[idx]
-		if field.IsPK() {
+		if field.IsPK() || field.IsRevision() {
 			return ErrInvalidField
 		}
 		if field.ServerOnly {

@@ -108,6 +108,37 @@ func (s *memStore) UpdateFields(rec model.Model, id string, fields []string) err
 	return nil
 }
 
+func (s *memStore) UpdateFieldsIf(rec model.Model, id string, fields []string, field string, expected int64) (rows int64, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	row, ok := s.rows[id]
+	if !ok {
+		return 0, model.NotFound("not found")
+	}
+	currentVal, ok := row[field]
+	if !ok || currentVal != expected {
+		return 0, nil
+	}
+	schema := rec.Schema()
+	ptrs := rec.Pointers()
+	for _, fName := range fields {
+		for i, f := range schema {
+			if f.Name == fName {
+				switch p := ptrs[i].(type) {
+				case *string:
+					row[f.Name] = *p
+				case *int64:
+					row[f.Name] = *p
+				case *bool:
+					row[f.Name] = *p
+				}
+			}
+		}
+	}
+	return 1, nil
+}
+
 func (s *memStore) Delete(rec model.Model, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

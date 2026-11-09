@@ -14,6 +14,7 @@ const (
 	ErrNoPrimaryKey   mountError = "crud: StoredEntity model has no primary key field"
 	ErrStampNotInt    mountError = "crud: created_at/updated_at must be an int64 nanosecond field"
 	ErrKeyKind        mountError = "crud: a primary key field must be text or int64"
+	ErrNoConditionalUpdate mountError = "crud: StoredEntity declares a Revision field but its Store cannot update conditionally; use orm.TenantStore or implement crud.ConditionalUpdater"
 	ErrKeyHasSeparator model.Invalid = "crud: a key value cannot contain /"
 	ErrBatchNotAtomic  model.Invalid = "crud: the resource saves one record at a time; send one record per request"
 	ErrOrCondition     model.Invalid = "crud: a search returned an OR condition; conditions are not grouped, so an OR could read other tenants' rows — return AND conditions only"
@@ -111,6 +112,14 @@ func (r *operationMounter) AddStoredEntity(entity StoredEntity) {
 		}
 	}
 
+	revisionField := revisionFieldIndex(schemaFields)
+	if revisionField >= 0 {
+		if _, ok := entity.Store.(ConditionalUpdater); !ok {
+			r.failMount(ErrNoConditionalUpdate)
+			return
+		}
+	}
+
 	modelName := entity.Model.ModelName()
 
 	mountAction := func(action model.Action, h router.HandlerFunc) {
@@ -143,10 +152,19 @@ func (r *operationMounter) AddStoredEntity(entity StoredEntity) {
 		rt.Describe(actionStr + " " + modelName)
 	}
 
-	mountAction(model.Create, createRecordsHandler(entity, publisher, schemaFields, keyFields, createdAtField, updatedAtField))
-	mountAction(model.Update, updateRecordsHandler(entity, publisher, schemaFields, keyFields, updatedAtField))
+	mountAction(model.Create, createRecordsHandler(entity, publisher, schemaFields, keyFields, createdAtField, updatedAtField, revisionField))
+	mountAction(model.Update, updateRecordsHandler(entity, publisher, schemaFields, keyFields, updatedAtField, revisionField))
 	mountAction(model.Delete, deleteRecordsHandler(entity, publisher, keyFields))
 	mountAction(model.Read, readRecordsHandler(entity, schemaFields))
+}
+
+func revisionFieldIndex(schemaFields []model.Field) int {
+	for i, f := range schemaFields {
+		if f.IsRevision() {
+			return i
+		}
+	}
+	return -1
 }
 
 func keyFieldIndexes(schemaFields []model.Field) []int {
@@ -180,6 +198,15 @@ func inTransaction(s Store, fn func(tx Tx) error) error {
 		return t.Atomic(fn)
 	}
 	return fn(s)
+}
+
+// runWrite runs fn with the store's own Tx when the write is simple (one record, no business rule: a single statement is atomic by itself) and inside a
+// transaction otherwise. A rule always gets a transaction: its check and its write must be one unit.
+func runWrite(s Store, simple bool, fn func(tx Tx) error) error {
+	if simple {
+		return fn(s)
+	}
+	return inTransaction(s, fn)
 }
 
 func keyValueOf(rec model.Model, keyFields []int) string {

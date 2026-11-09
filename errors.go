@@ -12,7 +12,10 @@ const (
 	ErrInvalidField     model.Invalid = "crud: immutable field"
 	ErrUnknownField     model.Invalid = "crud: unknown field"
 	ErrArgTooLong       model.Invalid = "crud: argument too long"
-	ErrServerOnlyField  model.Invalid = "crud: field written only by the server"
+	ErrServerOnlyField  model.Invalid  = "crud: field written only by the server"
+	ErrAlreadyExists    model.Conflict = "crud: the key already exists"
+	ErrConflict         model.Conflict = "crud: the record changed since you read it; read it again"
+	ErrRevisionRequired model.Invalid  = "crud: send the revision you read"
 )
 
 // ruleError is a mistake of a domain rule: a bug in the module, not in the request. It is not a model.Invalid, so the

@@ -19,6 +19,7 @@ In distributed services and multi-tenant architectures, hand-wiring persistence 
 - Domain rules return [`crud.RuleAnswer`](result.go) (`crud.ApplyAndPublish` or `crud.ApplyWithoutPublishing`).
 - Event subscriptions listen on canonical topics formatted by [`crud.Topic(module, entity, action)`](topic.go) with [`*crud.Change`](change.go) payloads.
 - Transports address operations via [`router.Operation{Module, Entity, Action}`](loopback.go).
+- A `Store` implementation proves itself with `conformance.Run`.
 
 ## Step-by-Step Guide
 
@@ -121,6 +122,7 @@ func SubscribePatients(sub events.Subscriber) {
 | [`topic.go`](topic.go) | Canonical event topic generation `Topic(module, entity, action)` |
 | [`mount.go`](mount.go) | `crud.Mount` operation registration and consistency verification |
 | [`loopback.go`](loopback.go) | In-process testing caller `crud.Loopback` and `crud.LoopbackActingAs` |
+| [`conformance/`](conformance/) | Conformance suite: a `Store` implementation proves itself with `conformance.Run` |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Architectural layout and request flow |
 | [`docs/diagrams/WRITE_FLOW.md`](docs/diagrams/WRITE_FLOW.md) | Visual flow of validation, rule evaluation, commit, and post-commit publishing |
 | [`docs/diagrams/PLACEMENT.md`](docs/diagrams/PLACEMENT.md) | Framework placement diagram |

@@ -38,7 +38,8 @@ func deleteRecordsHandler(entity StoredEntity, publisher eventPublisher, keyFiel
 		var deleted []model.Model
 		var ruleAnswers []RuleAnswer
 
-		err := inTransaction(entity.Store, func(tx Tx) error {
+		simple := len(request.IDs) == 1 && entity.Delete == nil
+		err := runWrite(entity.Store, simple, func(tx Tx) error {
 			deleted = deleted[:0]
 			ruleAnswers = ruleAnswers[:0]
 			for _, id := range request.IDs {

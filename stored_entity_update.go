@@ -4,10 +4,11 @@ import (
 	"webtyp.com/fmt"
 	"webtyp.com/model"
 	"webtyp.com/router"
+	"webtyp.com/storage"
 	"webtyp.com/time"
 )
 
-func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaFields []model.Field, keyFields []int, updatedAtField int) func(ctx router.Context) {
+func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaFields []model.Field, keyFields []int, updatedAtField, revisionField int) func(ctx router.Context) {
 	return func(ctx router.Context) {
 		request := UpdateArgs{Record: entity.NewList().Append().(model.Model)}
 		if err := ctx.Decode(&request); err != nil {
@@ -54,8 +55,19 @@ func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 			}
 		}
 
+		var expectedRevision int64
+		if revisionField >= 0 {
+			ptrs := request.Record.Pointers()
+			expectedRevision = *ptrs[revisionField].(*int64)
+			if expectedRevision <= 0 {
+				router.WriteError(ctx, ErrRevisionRequired)
+				return
+			}
+		}
+
 		ruleAnswers := make([]RuleAnswer, len(request.IDs))
-		err := inTransaction(entity.Store, func(tx Tx) error {
+		simple := len(request.IDs) == 1 && entity.Update == nil
+		err := runWrite(entity.Store, simple, func(tx Tx) error {
 			for i, id := range request.IDs {
 				old := entity.NewList().Append().(model.Model)
 				if err := tx.ReadOne(old, id); err != nil {
@@ -68,6 +80,9 @@ func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 				if updatedAtField >= 0 {
 					setIntField(next, updatedAtField, int64(time.NowNano()))
 				}
+				if revisionField >= 0 {
+					setIntField(next, revisionField, expectedRevision+1)
+				}
 				answer := ApplyAndPublish // a HaveNoBusinessRule action is plain storage: it always announces
 				if entity.Update != nil {
 					res, err := entity.Update(currentUser, tx, old, next, request.Fields)
@@ -79,8 +94,33 @@ func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 					}
 					answer = res
 				}
-				if err := tx.UpdateFields(next, id, fields); err != nil {
-					return err
+				if revisionField >= 0 {
+					revisionName := schemaFields[revisionField].Name
+					updateFields := make([]string, len(fields)+1)
+					copy(updateFields, fields)
+					updateFields[len(fields)] = revisionName
+
+					cu, ok := tx.(ConditionalUpdater)
+					if !ok {
+						cu = entity.Store.(ConditionalUpdater)
+					}
+					rows, err := cu.UpdateFieldsIf(next, id, updateFields, revisionName, expectedRevision)
+					if err != nil {
+						if storage.IsDuplicate(err) {
+							return ErrAlreadyExists
+						}
+						return err
+					}
+					if rows == 0 {
+						return ErrConflict
+					}
+				} else {
+					if err := tx.UpdateFields(next, id, fields); err != nil {
+						if storage.IsDuplicate(err) {
+							return ErrAlreadyExists
+						}
+						return err
+					}
 				}
 				ruleAnswers[i] = answer
 			}

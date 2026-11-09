@@ -25,15 +25,17 @@ flowchart TD
 3. **[`crud.StoredEntity`](../contract.go):** Represents a persistent domain entity. Connects `Store`, declared `model.Rules`, and optional business rules for Create, Update, Delete, or Search.
 4. **[`crud.CurrentUser`](../contract.go):** Explicit actor identity containing `UserID` extracted directly from verified session context—never read from request parameters.
 5. **[`crud.RuleAnswer`](../result.go):** Typed business rule response (`ApplyAndPublish` or `ApplyWithoutPublishing`). The zero value is refused (`ErrNoAnswer`).
+6. **[`crud/conformance`](../conformance/conformance.go):** Test suite proving an implementation of `crud.Store` satisfies its contract with `conformance.Run(t, newStore)`.
 
 ## 3. Execution & Data Flow
 
 For details on write operation progression, see [`docs/diagrams/WRITE_FLOW.md`](diagrams/WRITE_FLOW.md).
 
-- **Transactional Boundaries:** All batch mutations (Create, Update, Delete) execute inside atomic transactions via `inTransaction(Store, fn)`. If any record or hook fails, the entire transaction rolls back.
+- **Transactional Boundaries:** A write of one record with no business rule runs without a transaction (a single statement is atomic by itself). All other writes and any operation with a business rule execute inside atomic transactions via `inTransaction(Store, fn)`: a rule always gets a transaction so its check and write remain one atomic unit. If any record or hook fails, the entire transaction rolls back.
 - **Post-Commit Publishing:** Events are published **strictly after the transaction commits**, never inside. This eliminates ghost events caused by rollbacks or connection drops during commit.
 - **Event Notification:** Published via `events.Publisher` using canonical topics formatted by `crud.Topic(module, entity, action)` (e.g. `patients.patient.created`) carrying a `*crud.Change` payload with the stored record and touched update fields.
 - **Queries and Limits:** Read queries enforce `Cap(limit)` bounded by `MaxPage` (500). Pagination cursors operate through stable primary key ordering.
+- **Optimistic Concurrency & Revision (D48):** For entities declaring a `Revision` field, `create` initializes the revision counter to 1. On `update`, the revision field is immutable from client payloads (`ErrInvalidField`); the client passes the read revision in the record carrier (`Record.Revision > 0`). `crud` increments the counter, appends it to fields, and updates conditionally via `ConditionalUpdater.UpdateFieldsIf`. Stale concurrent updates fail with `ErrConflict` (409). Duplicate key errors map to `ErrAlreadyExists` (409).
 
 ## 4. Cross-Cutting Concerns
 

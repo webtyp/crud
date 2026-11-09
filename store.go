@@ -14,7 +14,13 @@ type Query struct {
 	Limit      int64               // already capped
 }
 
-// Tx reads and writes one table's rows. A Store scoped to a tenant applies the tenant to every call.
+// Tx reads and writes the rows of the store's database, so a rule may read and write other tables of the same tenant class through tx:
+//
+//	Create: func(c crud.CurrentUser, tx crud.Tx, order model.Model) (crud.RuleAnswer, error) {
+//		return crud.ApplyAndPublish, tx.UpdateFields(&inventory, order.(*Order).ProductID, []string{"stock"})
+//	}
+//
+// A Store scoped to a tenant applies the tenant to every call.
 type Tx interface {
 	ReadOne(rec model.Model, id string) error                                          // an error of kind model.ErrorNotFound when absent
 	ReadAll(newRow func() model.Model, q Query, onRow func(model.Model)) error
@@ -34,6 +40,12 @@ type Store interface {
 // A Store without it gets batches of one record only (ErrBatchNotAtomic): crud never promises atomicity that does not exist.
 type Transactional interface {
 	Atomic(fn func(tx Tx) error) error
+}
+
+// ConditionalUpdater is an optional Store capability: UpdateFieldsIf writes fields of the row id only if its column field still holds expected, and
+// says how many rows it changed (0 = someone changed the row first). It is what makes a Revision check atomic; a Store without it cannot serve an entity that declares one.
+type ConditionalUpdater interface {
+	UpdateFieldsIf(rec model.Model, id string, fields []string, field string, expected int64) (rows int64, err error)
 }
 
 // ModelChecker is an optional Store capability: Table calls it at mount so a wrong Store for a model stops the boot.

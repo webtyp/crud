@@ -1,5 +1,7 @@
 # Tests
 
+> The branch «encoding the answer fails» (the last `ctx.Encode` of each handler) cannot be reached through the loopback; it remains uncovered.
+
 | Test | Rule |
 |---|---|
 | [TestCrudImportsNoUI](../tests/no_ui_test.go) | crud package never imports webtyp/dom or webtyp/view |
@@ -26,7 +28,7 @@
 | [TestStoredEntity_CompositeKeyWithInt](../tests/stored_entity_test.go) | composite key with integer value |
 | [TestStoredEntity_PublicCreateWithoutSession](../tests/stored_entity_test.go) | mount operation handles public creation |
 | [TestStoredEntity_ServerOnlyRejected](../tests/stored_entity_test.go) | server only fields are rejected |
-| [TestMemStore](../tests/storetest_test.go) | in-memory store conforms to crud.Store and crud.Transactional contracts |
+| [TestMemStore](../tests/conformance_test.go) | in-memory store conforms to crud.Store and crud.Transactional contracts |
 | [TestMount_DomainWithoutHookIsOutOfDate](../tests/mount_check_test.go) | AddMyBusinessRule without hook declared returns out of date error |
 | [TestMount_HookWithoutDomainIsOutOfDate](../tests/mount_check_test.go) | HaveNoBusinessRule with hook declared returns out of date error |
 | [TestMount_SearchHookFollowsReadRule](../tests/mount_check_test.go) | Search hook must match Read rule declaration |
@@ -53,3 +55,26 @@
 | [TestWrite_ReadNeverPublishes](../tests/write_flow_test.go) | read operations never publish events |
 | [TestTopic_Shape](../tests/write_flow_test.go) | Topic formats module.entity.created/updated/deleted |
 | [TestChange_EncodesRecordAndFields](../tests/write_flow_test.go) | Change encodes record object and fields array |
+| [TestConcurrent_MixedRequestsShareNoState](../tests/concurrency_test.go) | Concurrent MixedRequestsShareNoState |
+| [TestWrite_UnreadableBodyIsRefused](../tests/write_edges_test.go) | Write UnreadableBodyIsRefused |
+| [TestWrite_CreateTwiceWithTheSameIDDoesNotDuplicate](../tests/write_edges_test.go) | Write CreateTwiceWithTheSameIDDoesNotDuplicate |
+| [TestWrite_CompositeKeyEmptyIsRequired](../tests/write_edges_test.go) | Write CompositeKeyEmptyIsRequired |
+| [TestWrite_StoreFailureRollsBackAndPublishesNothing](../tests/write_edges_test.go) | Write StoreFailureRollsBackAndPublishesNothing |
+| [TestWrite_UpdateIDsAreValidated](../tests/write_edges_test.go) | Write UpdateIDsAreValidated |
+| [TestWrite_DeleteIDsAreValidated](../tests/write_edges_test.go) | Write DeleteIDsAreValidated |
+| [TestWrite_UpdateFieldsAreValidated](../tests/write_edges_test.go) | Write UpdateFieldsAreValidated |
+| [TestWrite_BatchOnNonTransactionalStoreRejectedForUpdateAndDelete](../tests/write_edges_test.go) | Write BatchOnNonTransactionalStoreRejectedForUpdateAndDelete |
+| [TestWrite_IDWithSeparatorIsRejectedOnUpdateAndDelete](../tests/write_edges_test.go) | Write IDWithSeparatorIsRejectedOnUpdateAndDelete |
+| [TestWrite_ZeroAnswerIsRefusedOnUpdateAndDelete](../tests/write_edges_test.go) | Write ZeroAnswerIsRefusedOnUpdateAndDelete |
+| [TestWrite_DeleteMissingIsNotFound](../tests/write_edges_test.go) | Write DeleteMissingIsNotFound |
+| [TestWrite_OneRecordWithoutRuleOpensNoTransaction](../tests/write_edges_test.go) | Write OneRecordWithoutRuleOpensNoTransaction |
+| [TestWrite_OneRecordWithRuleOpensOneTransaction](../tests/write_edges_test.go) | Write OneRecordWithRuleOpensOneTransaction |
+| [TestWrite_BatchOpensOneTransaction](../tests/write_edges_test.go) | Write BatchOpensOneTransaction |
+| [TestWrite_SimpleWriteFailureLeavesNothing](../tests/write_edges_test.go) | Write SimpleWriteFailureLeavesNothing |
+| [TestRevision_CreateStartsAtOne](../tests/revision_test.go) | Revision CreateStartsAtOne |
+| [TestRevision_UpdateBumpsTheRevision](../tests/revision_test.go) | Revision UpdateBumpsTheRevision |
+| [TestRevision_StaleUpdateIsAConflict](../tests/revision_test.go) | Revision StaleUpdateIsAConflict |
+| [TestRevision_UpdateWithoutRevisionIsRefused](../tests/revision_test.go) | Revision UpdateWithoutRevisionIsRefused |
+| [TestRevision_ClientCannotWriteTheRevision](../tests/revision_test.go) | Revision ClientCannotWriteTheRevision |
+| [TestRevision_StoreWithoutConditionalUpdateFailsMount](../tests/revision_test.go) | Revision StoreWithoutConditionalUpdateFailsMount |
+| [TestWrite_DuplicateKeyIsAlreadyExists](../tests/revision_test.go) | Write DuplicateKeyIsAlreadyExists |

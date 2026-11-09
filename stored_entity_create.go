@@ -3,10 +3,11 @@ package crud
 import (
 	"webtyp.com/model"
 	"webtyp.com/router"
+	"webtyp.com/storage"
 	"webtyp.com/time"
 )
 
-func createRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaFields []model.Field, keyFields []int, createdAtField, updatedAtField int) func(ctx router.Context) {
+func createRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaFields []model.Field, keyFields []int, createdAtField, updatedAtField, revisionField int) func(ctx router.Context) {
 	return func(ctx router.Context) {
 		request := createRequest{list: entity.NewList()}
 		if err := ctx.Decode(&request); err != nil {
@@ -30,7 +31,8 @@ func createRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 		ruleAnswers := make([]RuleAnswer, request.list.Len())
 		now := int64(time.NowNano())
 
-		err := inTransaction(entity.Store, func(tx Tx) error {
+		simple := request.list.Len() == 1 && entity.Create == nil
+		err := runWrite(entity.Store, simple, func(tx Tx) error {
 			for i := 0; i < request.list.Len(); i++ {
 				rec := request.list.At(i).(model.Model)
 
@@ -58,6 +60,9 @@ func createRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 					}
 				}
 
+				if revisionField >= 0 {
+					setIntField(rec, revisionField, 1)
+				}
 				if createdAtField >= 0 {
 					setIntField(rec, createdAtField, now)
 				}
@@ -77,6 +82,9 @@ func createRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 					answer = res
 				}
 				if err := tx.Create(rec); err != nil {
+					if storage.IsDuplicate(err) {
+						return ErrAlreadyExists
+					}
 					return err
 				}
 				ruleAnswers[i] = answer

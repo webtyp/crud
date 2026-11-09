@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"sync"
 	"webtyp.com/events"
 	"webtyp.com/model"
 	"webtyp.com/router"
@@ -34,4 +35,16 @@ func (r *eventRecorder) Publish(e events.Event) { r.got = append(r.got, e) }
 // operationOf is the operation of the test module "tmod" and its entity "t" for one action.
 func operationOf(a model.Action) router.Operation {
 	return router.Operation{Module: "tmod", Entity: "t", Action: a}
+}
+
+// lockedPublisher makes the recorder safe to share between goroutines, so a race report points at crud and not at the test's own recorder.
+type lockedPublisher struct {
+	mu    sync.Mutex
+	inner *eventRecorder
+}
+
+func (p *lockedPublisher) Publish(e events.Event) {
+	p.mu.Lock()
+	p.inner.Publish(e)
+	p.mu.Unlock()
 }
