@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"webtyp.com/definitioncheck"
 	"webtyp.com/events"
 	"webtyp.com/model"
 	"webtyp.com/router"
@@ -16,16 +17,27 @@ const (
 	ErrEmptyModelName mountError = "crud: entity with empty ModelName()"
 )
 
-// Mount mounts m's operations on a transport's registry: every operation gets its canonical
-// name Op(entity, action), Requires(Resource(entity.ModelName()), action) and the validation of
-// validate.go. A Read whose entity name is in public is mounted Public instead (only the app
-// passes public). The first wiring mistake is returned and the transport must not serve.
+// Mount mounts m's operations on a transport's registry: every operation gets its canonical name Operation(entity, action),
+// Requires(Resource(entity.ModelName()), action) and the validation of validate.go. An action in public is mounted Public
+// instead (only the app passes public). pub receives the events crud publishes after each commit; nil means nobody listens.
+// Before and after mounting it checks the module against its own Definition: if they disagree the generated code is out of
+// date (the user forgot to run definitionc) and the first mistake is returned; the transport must not serve.
 //
-//	if err := crud.Mount(reg, nil, patients); err != nil { return err }
-func Mount(reg router.OperationRegistry, public []Public, m Module) error {
-	r := &operationMounter{reg: reg, public: public}
+//	if err := crud.Mount(reg, nil, broker, patients); err != nil { return err }
+func Mount(reg router.OperationRegistry, public []Public, pub events.Publisher, m Module) error {
+	def := m.Definition()
+	if err := definitioncheck.CheckModule(def); err != nil {
+		return err
+	}
+	if def.Name != m.ModelName() {
+		return &outOfDateError{module: m.ModelName(), entity: def.Name, what: whatName}
+	}
+	r := &operationMounter{reg: reg, public: public, pub: pub, module: m.ModelName()}
 	m.MountOperations(r)
-	return r.err
+	if r.err != nil {
+		return r.err
+	}
+	return r.verify(def)
 }
 
 type operationMounter struct {
@@ -35,6 +47,41 @@ type operationMounter struct {
 	module          string           // the module's ModelName()
 	mountedEntities []string         // every entity mounted by AddStoredEntity or AddReadOnlyEntity, in order
 	err             error
+}
+
+// verify compares what MountOperations mounted with the entities Definition lists. An entity with Allow == 0 is internal to
+// the module and is never mounted.
+func (r *operationMounter) verify(def model.ModuleDefinition) error {
+	for _, h := range def.Entities {
+		if h.Allow != 0 && !r.has(h.Name) {
+			return &outOfDateError{module: r.module, entity: h.Name, what: whatMissing}
+		}
+	}
+	for _, name := range r.mountedEntities {
+		if !isOffered(def, name) {
+			return &outOfDateError{module: r.module, entity: name, what: whatExtra}
+		}
+	}
+	return nil
+}
+
+func (r *operationMounter) has(name string) bool {
+	for _, m := range r.mountedEntities {
+		if m == name {
+			return true
+		}
+	}
+	return false
+}
+
+// isOffered reports whether def lists an entity called name that offers any action.
+func isOffered(def model.ModuleDefinition, name string) bool {
+	for _, h := range def.Entities {
+		if h.Name == name && h.Allow != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *operationMounter) failMount(err error) Route {

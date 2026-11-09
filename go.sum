@@ -1,5 +1,7 @@
 webtyp.com/calendar v0.1.0 h1:lI0i74Ghee+fnYDx2P6XFJQKLyJKTeQbg4eT9IK8980=
 webtyp.com/calendar v0.1.0/go.mod h1:lHsVxVDpLBAGKovlPew9d5c0YiMoNQxfUHG8OfXDhHk=
+webtyp.com/definitioncheck v0.0.2 h1:tMHA0q+FlTZf9oYek9QnR7SGFWp9kiXA9aHcb6swo+A=
+webtyp.com/definitioncheck v0.0.2/go.mod h1:Mcgs1b4OhTD+c9yIPFrHkeAXfRgINSpyxf7RtZnmgao=
 webtyp.com/escape v0.1.0 h1:LvAiviOM15TUiJBUK4CO7TLp3oAQ+GoKunaVTVKsklA=
 webtyp.com/escape v0.1.0/go.mod h1:77ZTqob2u8NA2FUu723FzajXwcTk4ddlWWLXtKyOfO4=
 webtyp.com/events v0.1.8 h1:9Qwi7Yi1jtrnIa+3jktSsguE/VWzr6UbtI7u1ZT49UE=

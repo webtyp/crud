@@ -56,10 +56,13 @@ type Public struct {
 	Actions model.Action
 }
 
-// Module is a domain module: it names itself and mounts its entities' operations.
+// Module is a domain module: it names itself, declares its entities and mounts their operations.
+// definitionc generates Definition and MountOperations from the module's definition.go; nobody writes them by hand.
 //
 //	var _ crud.Module = (*Module)(nil)
 type Module interface {
 	model.ModuleNaming
+	// Definition is the module's declaration (its definition.go). Mount compares it with what MountOperations mounted.
+	Definition() model.ModuleDefinition
 	MountOperations(reg Registry)
 }
