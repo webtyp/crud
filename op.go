@@ -1,7 +1,7 @@
 package crud
 
 import (
-	"strings"
+	"webtyp.com/fmt"
 
 	"webtyp.com/model"
 )
@@ -36,7 +36,7 @@ func Op(m model.ModuleNaming, action model.Action) string {
 	}
 }
 
-func decodeStrings(r model.FieldReader, key string, one *[1]string) (out []string, tooMany bool, hasEmpty bool) {
+func decodeTextList(r model.FieldReader, key string, one *[1]string) (out []string, tooMany bool, hasEmpty bool) {
 	arr, ok := r.Array(key)
 	if !ok {
 		return nil, false, false
@@ -50,7 +50,7 @@ func decodeStrings(r model.FieldReader, key string, one *[1]string) (out []strin
 	}
 	if n == 1 {
 		s := arr.String(0)
-		if strings.TrimSpace(s) == "" {
+		if fmt.TrimSpace(s) == "" {
 			return nil, false, true
 		}
 		one[0] = s
@@ -59,7 +59,7 @@ func decodeStrings(r model.FieldReader, key string, one *[1]string) (out []strin
 	out = make([]string, 0, n)
 	for i := 0; i < n; i++ {
 		s := arr.String(i)
-		if strings.TrimSpace(s) == "" {
+		if fmt.TrimSpace(s) == "" {
 			hasEmpty = true
 		} else {
 			out = append(out, s)

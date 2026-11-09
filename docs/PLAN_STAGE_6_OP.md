@@ -75,7 +75,7 @@ func operationOf(a model.Action) router.Operation { return router.Operation{Modu
 ```
 
 and replace every `"tmod."+crud.Op(&tRec{}, model.X)` by `operationOf(model.X)`; in `filter_test.go` the module is `filtertest` and the entity the wire model's name: build the `router.Operation` literal there (`router.Operation{Module: "filtertest", Entity: "mock", Action: model.Read}`).
-`mockRouter.Operation` in `tests/stored_entity_test.go` takes a `router.Operation` and records `op.Entity + "_" + op.Verb()`; replace the assertions `reg.Has("t_u")` by `reg.Has("t_update")` and `reg.Has("t_c")` by `reg.Has("t_create")`.
+`mockRouter.Operation` in `tests/stored_entity_test.go` takes a `router.Operation` and records `op.Entity + "_" + op.Action.Verb()` (`Verb` lives on `model.Action`, not on `router.Operation`); replace the assertions `reg.Has("t_u")` by `reg.Has("t_update")` and `reg.Has("t_c")` by `reg.Has("t_create")`.
 
 New tests in `tests/op_test.go`:
 

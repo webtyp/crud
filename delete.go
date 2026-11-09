@@ -25,6 +25,6 @@ func (a *DeleteArgs) EncodeFields(w model.FieldWriter) {
 }
 
 func (a *DeleteArgs) DecodeFields(r model.FieldReader) {
-	a.IDs, a.tooMany, a.hasEmpty = decodeStrings(r, keyIDs, &a.one)
+	a.IDs, a.tooMany, a.hasEmpty = decodeTextList(r, keyIDs, &a.one)
 }
 

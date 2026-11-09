@@ -1,7 +1,6 @@
 package crud
 
 import (
-	"strings"
 
 	"webtyp.com/fmt"
 	"webtyp.com/model"
@@ -20,7 +19,7 @@ func validateIDs(ids []string, hasEmpty, tooMany bool) error {
 		return ErrNoIDs
 	}
 	for i := 0; i < len(ids); i++ {
-		trimmed := strings.TrimSpace(ids[i])
+		trimmed := fmt.TrimSpace(ids[i])
 		if trimmed == "" || len(trimmed) > MaxID {
 			return ErrInvalidID
 		}
@@ -44,7 +43,7 @@ func validateReadArgs(a *ReadArgs) error {
 	return model.ValidateInput(model.ActionCreate, a.Filter)
 }
 
-func serverOnlyWritten(schema []model.Field, rec model.Fielder) bool {
+func writesServerOnlyField(schema []model.Field, rec model.Fielder) bool {
 	ptrs := rec.Pointers()
 	for i := range schema {
 		if !schema[i].ServerOnly {
@@ -76,7 +75,7 @@ func validateCreateBatch(schema []model.Field, list model.ModelSlice, tooMany bo
 	}
 	for i := 0; i < list.Len(); i++ {
 		elem := list.At(i)
-		if serverOnlyWritten(schema, elem) {
+		if writesServerOnlyField(schema, elem) {
 			return ErrServerOnlyField
 		}
 		if err := model.ValidateInput(model.ActionCreate, elem); err != nil {

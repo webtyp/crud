@@ -22,25 +22,25 @@ const (
 //
 //	if err := crud.Mount(reg, nil, patients); err != nil { return err }
 func Mount(reg router.OperationRegistry, public []Public, m Module) error {
-	r := &registry{reg: reg, public: public}
+	r := &operationMounter{reg: reg, public: public}
 	m.MountOperations(r)
 	return r.err
 }
 
-type registry struct {
+type operationMounter struct {
 	reg    router.OperationRegistry
 	public []Public
 	err    error
 }
 
-func (r *registry) fail(err error) Route {
+func (r *operationMounter) failMount(err error) Route {
 	if r.err == nil {
 		r.err = err
 	}
-	return noRoute{}
+	return failedRoute{}
 }
 
-func (r *registry) isPublic(name string, action model.Action) bool {
+func (r *operationMounter) isPublicAction(name string, action model.Action) bool {
 	for _, p := range r.public {
 		if p.Model.ModelName() == name && p.Actions.Has(action) {
 			return true
@@ -50,15 +50,15 @@ func (r *registry) isPublic(name string, action model.Action) bool {
 }
 
 // route wraps router.Route so the module only sees RequiresMFA and Describe.
-type route struct{ r router.Route }
+type mountedRoute struct{ r router.Route }
 
-func (x route) RequiresMFA() Route         { x.r.RequiresMFA(); return x }
-func (x route) Describe(text string) Route { x.r.Describe(text); return x }
+func (x mountedRoute) RequiresMFA() Route         { x.r.RequiresMFA(); return x }
+func (x mountedRoute) Describe(text string) Route { x.r.Describe(text); return x }
 
-// noRoute is returned after a wiring mistake; Mount reports the error.
-type noRoute struct{}
+// failedRoute is returned after a wiring mistake; Mount reports the error.
+type failedRoute struct{}
 
-func (noRoute) RequiresMFA() Route    { return noRoute{} }
-func (noRoute) Describe(string) Route { return noRoute{} }
+func (failedRoute) RequiresMFA() Route    { return failedRoute{} }
+func (failedRoute) Describe(string) Route { return failedRoute{} }
 
-func callerOf(ctx router.Context) Caller { return Caller{UserID: ctx.UserID()} }
+func currentUserOf(ctx router.Context) Caller { return Caller{UserID: ctx.UserID()} }

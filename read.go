@@ -79,12 +79,12 @@ func (a *ReadArgs) DecodeFields(r model.FieldReader) {
 	}
 }
 
-func (r *registry) Read(m model.ModuleNaming, newFilter func() model.Model, read func(c Caller, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route {
+func (r *operationMounter) Read(m model.ModuleNaming, newFilter func() model.Model, read func(c Caller, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route {
 	if m == nil || read == nil {
-		return r.fail(ErrNilFunction)
+		return r.failMount(ErrNilFunction)
 	}
 	if m.ModelName() == "" {
-		return r.fail(ErrEmptyModelName)
+		return r.failMount(ErrEmptyModelName)
 	}
 	h := func(ctx router.Context) {
 		args := ReadArgs{}
@@ -99,7 +99,7 @@ func (r *registry) Read(m model.ModuleNaming, newFilter func() model.Model, read
 			router.WriteError(ctx, err)
 			return
 		}
-		list, err := read(callerOf(ctx), args, args.Filter)
+		list, err := read(currentUserOf(ctx), args, args.Filter)
 		if err != nil {
 			router.WriteError(ctx, err)
 			return
@@ -111,11 +111,11 @@ func (r *registry) Read(m model.ModuleNaming, newFilter func() model.Model, read
 		}
 	}
 	rt := r.reg.Operation(Op(m, model.Read), h)
-	if r.isPublic(m.ModelName(), model.Read) {
+	if r.isPublicAction(m.ModelName(), model.Read) {
 		rt.Public()
 	} else {
 		rt.Requires(model.Resource(m.ModelName()), model.Read)
 	}
 	rt.Accepts(&ReadArgs{})
-	return route{rt}
+	return mountedRoute{rt}
 }

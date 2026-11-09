@@ -1,18 +1,18 @@
 package crud
 
 import (
-	"strings"
+	"webtyp.com/fmt"
 
 	"webtyp.com/model"
 	"webtyp.com/router"
 	"webtyp.com/storage"
 )
 
-func readHandler(t Table, schema []model.Field) func(ctx router.Context) {
+func readRecordsHandler(entity Table, schemaFields []model.Field) func(ctx router.Context) {
 	return func(ctx router.Context) {
 		var filter model.Model
-		if t.NewFilter != nil {
-			filter = t.NewFilter()
+		if entity.NewFilter != nil {
+			filter = entity.NewFilter()
 		}
 
 		args := ReadArgs{}
@@ -29,14 +29,14 @@ func readHandler(t Table, schema []model.Field) func(ctx router.Context) {
 		}
 
 		if args.ID != "" {
-			row := t.NewList().Append().(model.Model)
-			if err := t.Store.ReadOne(row, args.ID); err != nil {
+			row := entity.NewList().Append().(model.Model)
+			if err := entity.Store.ReadOne(row, args.ID); err != nil {
 				router.WriteError(ctx, err)
 				return
 			}
-			list := t.NewList()
+			list := entity.NewList()
 			r2 := list.Append().(model.Model)
-			if err := t.Store.ReadOne(r2, args.ID); err != nil {
+			if err := entity.Store.ReadOne(r2, args.ID); err != nil {
 				router.WriteError(ctx, err)
 				return
 			}
@@ -48,12 +48,12 @@ func readHandler(t Table, schema []model.Field) func(ctx router.Context) {
 			return
 		}
 
-		caller := callerOf(ctx)
+		caller := currentUserOf(ctx)
 		var conds []storage.Condition
 
 		if args.Search != "" {
-			if t.Search != nil {
-				hooks, err := t.Search(caller, args.Search)
+			if entity.Search != nil {
+				hooks, err := entity.Search(caller, args.Search)
 				if err != nil {
 					router.WriteError(ctx, err)
 					return
@@ -67,7 +67,7 @@ func readHandler(t Table, schema []model.Field) func(ctx router.Context) {
 				conds = append(conds, hooks...)
 			} else {
 				var labelField string
-				for _, f := range schema {
+				for _, f := range schemaFields {
 					if f.Item == model.ItemLabel {
 						labelField = f.Name
 						break
@@ -77,7 +77,7 @@ func readHandler(t Table, schema []model.Field) func(ctx router.Context) {
 					router.WriteError(ctx, ErrNoSearchField)
 					return
 				}
-				conds = append(conds, storage.Like(labelField, "%"+strings.ToLower(args.Search)+"%"))
+				conds = append(conds, storage.Like(labelField, "%"+fmt.ToLower(args.Search)+"%"))
 			}
 		}
 
@@ -109,14 +109,14 @@ func readHandler(t Table, schema []model.Field) func(ctx router.Context) {
 			Limit:      limit,
 		}
 
-		list := t.NewList()
+		list := entity.NewList()
 
-		err := t.Store.ReadAll(
-			func() model.Model { return t.NewList().Append().(model.Model) },
+		err := entity.Store.ReadAll(
+			func() model.Model { return entity.NewList().Append().(model.Model) },
 			q,
 			func(m model.Model) {
 				row := list.Append().(model.Model)
-				copyRow(m, row)
+				copyRecord(m, row)
 			},
 		)
 
@@ -133,7 +133,7 @@ func readHandler(t Table, schema []model.Field) func(ctx router.Context) {
 	}
 }
 
-func copyRow(src, dst model.Model) {
+func copyRecord(src, dst model.Model) {
 	srcPtrs := src.Pointers()
 	dstPtrs := dst.Pointers()
 	for i := range srcPtrs {

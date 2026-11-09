@@ -33,12 +33,12 @@ func (a *UpdateArgs) EncodeFields(w model.FieldWriter) {
 }
 
 func (a *UpdateArgs) DecodeFields(r model.FieldReader) {
-	a.IDs, a.tooMany, a.hasEmpty = decodeStrings(r, keyIDs, &a.oneID)
+	a.IDs, a.tooMany, a.hasEmpty = decodeTextList(r, keyIDs, &a.oneID)
 	if a.tooMany {
 		return
 	}
 	var fTooMany bool
-	a.Fields, fTooMany, _ = decodeStrings(r, keyFields, &a.oneField)
+	a.Fields, fTooMany, _ = decodeTextList(r, keyFields, &a.oneField)
 	if fTooMany {
 		a.tooMany = true
 		return

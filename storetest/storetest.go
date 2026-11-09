@@ -1,7 +1,7 @@
 package storetest
 
 import (
-	"errors"
+	"webtyp.com/fmt"
 	"testing"
 	"webtyp.com/crud"
 	"webtyp.com/model"
@@ -112,7 +112,7 @@ func Run(t *testing.T, newStore func(t *testing.T) crud.Store) {
 		if !ok {
 			return
 		}
-		errFail := errors.New("fail")
+		errFail := fmt.Err("fail")
 		err := txStore.Atomic(func(tx crud.Tx) error {
 			tx.Create(&TestModel{ID: "4"})
 			return errFail

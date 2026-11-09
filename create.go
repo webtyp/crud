@@ -18,14 +18,14 @@ func (a *CreateArgs) EncodeFields(w model.FieldWriter) {
 	}
 }
 
-type createIn struct {
+type createRequest struct {
 	list    model.ModelSlice
 	tooMany bool
 }
 
-func (c *createIn) IsNil() bool { return c == nil }
+func (c *createRequest) IsNil() bool { return c == nil }
 
-func (c *createIn) DecodeFields(r model.FieldReader) {
+func (c *createRequest) DecodeFields(r model.FieldReader) {
 	arr, ok := r.Array(keyRecords)
 	if !ok {
 		return

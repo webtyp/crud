@@ -1,7 +1,6 @@
 package crud
 
 import (
-	"strings"
 	"webtyp.com/fmt"
 	"webtyp.com/model"
 	"webtyp.com/router"
@@ -28,93 +27,93 @@ const (
 	FieldUpdatedAt = "updated_at"
 )
 
-func (r *registry) Table(t Table) {
-	if t.Model == nil || t.NewList == nil {
-		r.fail(ErrNilFunction)
+func (r *operationMounter) Table(entity Table) {
+	if entity.Model == nil || entity.NewList == nil {
+		r.failMount(ErrNilFunction)
 		return
 	}
-	allower, ok := t.Model.(model.Allower)
+	allower, ok := entity.Model.(model.Allower)
 	if !ok || allower.Allow() == 0 {
-		r.fail(ErrNothingAllowed)
+		r.failMount(ErrNothingAllowed)
 		return
 	}
 	allow := allower.Allow()
-	if t.Store == nil {
-		r.fail(ErrNoStore)
+	if entity.Store == nil {
+		r.failMount(ErrNoStore)
 		return
 	}
-	if t.Create != nil && !allow.Has(model.Create) {
-		r.fail(ErrHookWithoutAction)
+	if entity.Create != nil && !allow.Has(model.Create) {
+		r.failMount(ErrHookWithoutAction)
 		return
 	}
-	if t.Update != nil && !allow.Has(model.Update) {
-		r.fail(ErrHookWithoutAction)
+	if entity.Update != nil && !allow.Has(model.Update) {
+		r.failMount(ErrHookWithoutAction)
 		return
 	}
-	if t.Delete != nil && !allow.Has(model.Delete) {
-		r.fail(ErrHookWithoutAction)
+	if entity.Delete != nil && !allow.Has(model.Delete) {
+		r.failMount(ErrHookWithoutAction)
 		return
 	}
-	if (t.Search != nil || t.NewFilter != nil) && !allow.Has(model.Read) {
-		r.fail(ErrHookWithoutAction)
-		return
-	}
-
-	schema := t.Model.Schema()
-	pk := pkIndex(schema)
-	if len(pk) == 0 {
-		r.fail(ErrNoPrimaryKey)
+	if (entity.Search != nil || entity.NewFilter != nil) && !allow.Has(model.Read) {
+		r.failMount(ErrHookWithoutAction)
 		return
 	}
 
-	ptrs := t.Model.Pointers()
-	for _, i := range pk {
+	schemaFields := entity.Model.Schema()
+	keyFields := keyFieldIndexes(schemaFields)
+	if len(keyFields) == 0 {
+		r.failMount(ErrNoPrimaryKey)
+		return
+	}
+
+	ptrs := entity.Model.Pointers()
+	for _, i := range keyFields {
 		switch ptrs[i].(type) {
 		case *string, *int64:
 		default:
-			r.fail(ErrKeyKind)
+			r.failMount(ErrKeyKind)
 			return
 		}
 	}
 
-	if checker, ok := t.Store.(ModelChecker); ok {
-		if err := checker.CheckModel(t.Model); err != nil {
-			r.fail(err)
+	if checker, ok := entity.Store.(ModelChecker); ok {
+		if err := checker.CheckModel(entity.Model); err != nil {
+			r.failMount(err)
 			return
 		}
 	}
 
-	createdIdx := stampIndex(schema, FieldCreatedAt)
-	if createdIdx >= 0 {
-		if _, ok := ptrs[createdIdx].(*int64); !ok {
-			r.fail(ErrStampNotInt)
+	createdAtField := timestampFieldIndex(schemaFields, FieldCreatedAt)
+	if createdAtField >= 0 {
+		if _, ok := ptrs[createdAtField].(*int64); !ok {
+			r.failMount(ErrStampNotInt)
 			return
 		}
 	}
-	updatedIdx := stampIndex(schema, FieldUpdatedAt)
-	if updatedIdx >= 0 {
-		if _, ok := ptrs[updatedIdx].(*int64); !ok {
-			r.fail(ErrStampNotInt)
+	updatedAtField := timestampFieldIndex(schemaFields, FieldUpdatedAt)
+	if updatedAtField >= 0 {
+		if _, ok := ptrs[updatedAtField].(*int64); !ok {
+			r.failMount(ErrStampNotInt)
 			return
 		}
 	}
 
-	modelName := t.Model.ModelName()
+	modelName := entity.Model.ModelName()
 
 	mountAction := func(action model.Action, h router.HandlerFunc) {
 		if !allow.Has(action) {
 			return
 		}
-		op := r.reg.Operation(Op(t.Model, action), h)
-		if r.isPublic(modelName, action) {
+		op := r.reg.Operation(Op(entity.Model, action), h)
+		if r.isPublicAction(modelName, action) {
 			op.Public()
 		} else {
 			op.Requires(model.Resource(modelName), action)
 		}
 		if action == model.Create || action == model.Update {
-			op.Accepts(t.Model)
+			op.Accepts(entity.Model)
 		}
-		if t.MFA.Has(action) {
+		if entity.MFA.Has(action) {
 			op.RequiresMFA()
 		}
 
@@ -128,15 +127,15 @@ func (r *registry) Table(t Table) {
 		op.Describe(actionStr + " " + modelName)
 	}
 
-	mountAction(model.Create, createHandler(t, schema, pk, createdIdx, updatedIdx))
-	mountAction(model.Update, updateHandler(t, schema, pk, updatedIdx))
-	mountAction(model.Delete, deleteHandler(t, pk))
-	mountAction(model.Read, readHandler(t, schema))
+	mountAction(model.Create, createRecordsHandler(entity, schemaFields, keyFields, createdAtField, updatedAtField))
+	mountAction(model.Update, updateRecordsHandler(entity, schemaFields, keyFields, updatedAtField))
+	mountAction(model.Delete, deleteRecordsHandler(entity, keyFields))
+	mountAction(model.Read, readRecordsHandler(entity, schemaFields))
 }
 
-func pkIndex(schema []model.Field) []int {
+func keyFieldIndexes(schemaFields []model.Field) []int {
 	var idxs []int
-	for i, f := range schema {
+	for i, f := range schemaFields {
 		if f.IsPK() {
 			idxs = append(idxs, i)
 		}
@@ -144,8 +143,8 @@ func pkIndex(schema []model.Field) []int {
 	return idxs
 }
 
-func stampIndex(schema []model.Field, name string) int {
-	for i, f := range schema {
+func timestampFieldIndex(schemaFields []model.Field, name string) int {
+	for i, f := range schemaFields {
 		if f.Name == name {
 			return i
 		}
@@ -153,24 +152,24 @@ func stampIndex(schema []model.Field, name string) int {
 	return -1
 }
 
-func setString(rec model.Model, i int, v string) {
+func setTextField(rec model.Model, i int, v string) {
 	*rec.Pointers()[i].(*string) = v
 }
-func setInt(rec model.Model, i int, v int64) {
+func setIntField(rec model.Model, i int, v int64) {
 	*rec.Pointers()[i].(*int64) = v
 }
 
-func atomicStore(s Store, fn func(tx Tx) error) error {
+func inTransaction(s Store, fn func(tx Tx) error) error {
 	if t, ok := s.(Transactional); ok {
 		return t.Atomic(fn)
 	}
 	return fn(s)
 }
 
-func keyOf(rec model.Model, pk []int) string {
+func keyValueOf(rec model.Model, keyFields []int) string {
 	ptrs := rec.Pointers()
-	parts := make([]string, len(pk))
-	for i, idx := range pk {
+	parts := make([]string, len(keyFields))
+	for i, idx := range keyFields {
 		switch v := ptrs[idx].(type) {
 		case *string:
 			parts[i] = *v
@@ -181,13 +180,13 @@ func keyOf(rec model.Model, pk []int) string {
 	return model.JoinKey(parts...)
 }
 
-func setKey(rec model.Model, pk []int, id string) error {
-	parts, ok := model.SplitKey(id, len(pk))
+func setKeyValue(rec model.Model, keyFields []int, id string) error {
+	parts, ok := model.SplitKey(id, len(keyFields))
 	if !ok {
 		return ErrInvalidID
 	}
 	ptrs := rec.Pointers()
-	for i, idx := range pk {
+	for i, idx := range keyFields {
 		switch ptr := ptrs[idx].(type) {
 		case *string:
 			*ptr = parts[i]
@@ -202,10 +201,10 @@ func setKey(rec model.Model, pk []int, id string) error {
 	return nil
 }
 
-func hasSeparator(rec model.Model, pk []int) bool {
+func keyHasSeparator(rec model.Model, keyFields []int) bool {
 	ptrs := rec.Pointers()
-	for _, idx := range pk {
-		if s, ok := ptrs[idx].(*string); ok && strings.Contains(*s, model.KeySeparator) {
+	for _, idx := range keyFields {
+		if s, ok := ptrs[idx].(*string); ok && fmt.Contains(*s, model.KeySeparator) {
 			return true
 		}
 	}

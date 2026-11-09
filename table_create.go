@@ -6,62 +6,62 @@ import (
 	"webtyp.com/time"
 )
 
-func createHandler(t Table, schema []model.Field, pk []int, created, updated int) func(ctx router.Context) {
+func createRecordsHandler(entity Table, schemaFields []model.Field, keyFields []int, createdAtField, updatedAtField int) func(ctx router.Context) {
 	return func(ctx router.Context) {
-		in := createIn{list: t.NewList()}
-		if err := ctx.Decode(&in); err != nil {
+		request := createRequest{list: entity.NewList()}
+		if err := ctx.Decode(&request); err != nil {
 			router.WriteError(ctx, ErrCannotRead)
 			return
 		}
-		if err := validateCreateBatch(schema, in.list, in.tooMany); err != nil {
+		if err := validateCreateBatch(schemaFields, request.list, request.tooMany); err != nil {
 			router.WriteError(ctx, err)
 			return
 		}
 
-		if in.list.Len() > 1 {
-			if _, ok := t.Store.(Transactional); !ok {
+		if request.list.Len() > 1 {
+			if _, ok := entity.Store.(Transactional); !ok {
 				router.WriteError(ctx, ErrBatchNotAtomic)
 				return
 			}
 		}
 
-		caller := callerOf(ctx)
-		skipped := make([]bool, in.list.Len())
+		caller := currentUserOf(ctx)
+		alreadyStored := make([]bool, request.list.Len())
 		now := int64(time.NowNano())
 
-		err := atomicStore(t.Store, func(tx Tx) error {
-			for i := 0; i < in.list.Len(); i++ {
-				rec := in.list.At(i).(model.Model)
+		err := inTransaction(entity.Store, func(tx Tx) error {
+			for i := 0; i < request.list.Len(); i++ {
+				rec := request.list.At(i).(model.Model)
 
-				if hasSeparator(rec, pk) {
+				if keyHasSeparator(rec, keyFields) {
 					return ErrKeyHasSeparator
 				}
 
-				id := keyOf(rec, pk)
+				id := keyValueOf(rec, keyFields)
 
 				if id == "" {
-					if len(pk) > 1 {
-						return &model.FieldError{Field: schema[pk[0]].Name, Err: model.Invalid("required")}
+					if len(keyFields) > 1 {
+						return &model.FieldError{Field: schemaFields[keyFields[0]].Name, Err: model.Invalid("required")}
 					}
-					setString(rec, pk[0], t.Store.NewID())
+					setTextField(rec, keyFields[0], entity.Store.NewID())
 				} else {
-					stored := t.NewList().Append().(model.Model)
+					stored := entity.NewList().Append().(model.Model)
 					if err := tx.ReadOne(stored, id); err == nil {
 						if err := tx.ReadOne(rec, id); err != nil {
 							return err
 						}
-						skipped[i] = true
+						alreadyStored[i] = true
 						continue
 					} else if model.KindOf(err) != model.ErrorNotFound {
 						return err
 					}
 				}
 
-				if created >= 0 { setInt(rec, created, now) }
-				if updated >= 0 { setInt(rec, updated, now) }
+				if createdAtField >= 0 { setIntField(rec, createdAtField, now) }
+				if updatedAtField >= 0 { setIntField(rec, updatedAtField, now) }
 
-				if t.Create != nil {
-					if err := t.Create(caller, tx, rec); err != nil {
+				if entity.Create != nil {
+					if err := entity.Create(caller, tx, rec); err != nil {
 						return err
 					}
 				}
@@ -77,15 +77,15 @@ func createHandler(t Table, schema []model.Field, pk []int, created, updated int
 			return
 		}
 
-		if t.Committed != nil {
-			for i := 0; i < in.list.Len(); i++ {
-				if !skipped[i] {
-					t.Committed(caller, model.Create, in.list.At(i).(model.Model), nil)
+		if entity.Committed != nil {
+			for i := 0; i < request.list.Len(); i++ {
+				if !alreadyStored[i] {
+					entity.Committed(caller, model.Create, request.list.At(i).(model.Model), nil)
 				}
 			}
 		}
 
-		last := in.list.At(in.list.Len() - 1).(model.Encodable)
+		last := request.list.At(request.list.Len() - 1).(model.Encodable)
 		if err := ctx.Encode(last); err != nil {
 			router.WriteError(ctx, err)
 		}

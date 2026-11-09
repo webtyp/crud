@@ -28,6 +28,7 @@ File names are still the old ones in this stage (`table*.go`); stage 3 renames t
 
 `t` → `entity`, `schema` → `schemaFields`, `pk` → `keyFields`, `created` → `createdAtField`, `updated` → `updatedAtField` (the same words in the signatures of the four `…Handler` constructors above).
 In the handlers: `in` → `request`, `skipped` → `alreadyStored`, `answers` → `ruleAnswers`.
+Rename **every use inside the function body**, not only the parameter list (`schema` is used in the body of `readHandler` too): use `gopls rename` on the declaration so the compiler follows each use. The event publisher variable is called `publisher`, never `events`, which is the name of the imported package `webtyp.com/events`.
 
 ## 0.3 Standard library out (this package reaches the browser: `view` and `layout` import it)
 

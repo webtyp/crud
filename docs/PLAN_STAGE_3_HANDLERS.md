@@ -78,7 +78,7 @@ In `func (r *operationMounter) AddStoredEntity(entity StoredEntity)` insert, **a
 		return
 	}
 	r.mountedEntities = append(r.mountedEntities, def.Name)
-	events := eventPublisher{pub: r.pub, module: r.module, entity: def.Name}
+	publisher := eventPublisher{pub: r.pub, module: r.module, entity: def.Name}
 ```
 
 Add to `stored_entity.go`:
@@ -104,9 +104,9 @@ func mismatchedHookActions(entity StoredEntity) model.Action {
 and change the three handler constructors at the end of `AddStoredEntity`:
 
 ```go
-	mountAction(model.Create, createRecordsHandler(entity, events, schemaFields, keyFields, createdAtField, updatedAtField))
-	mountAction(model.Update, updateRecordsHandler(entity, events, schemaFields, keyFields, updatedAtField))
-	mountAction(model.Delete, deleteRecordsHandler(entity, events, keyFields))
+	mountAction(model.Create, createRecordsHandler(entity, publisher, schemaFields, keyFields, createdAtField, updatedAtField))
+	mountAction(model.Update, updateRecordsHandler(entity, publisher, schemaFields, keyFields, updatedAtField))
+	mountAction(model.Delete, deleteRecordsHandler(entity, publisher, keyFields))
 	mountAction(model.Read, readRecordsHandler(entity, schemaFields))
 ```
 
@@ -138,7 +138,7 @@ import (
 	"webtyp.com/time"
 )
 
-func createRecordsHandler(entity StoredEntity, events eventPublisher, schemaFields []model.Field, keyFields []int, createdAtField, updatedAtField int) func(ctx router.Context) {
+func createRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaFields []model.Field, keyFields []int, createdAtField, updatedAtField int) func(ctx router.Context) {
 	return func(ctx router.Context) {
 		request := createRequest{list: entity.NewList()}
 		if err := ctx.Decode(&request); err != nil {
@@ -223,7 +223,7 @@ func createRecordsHandler(entity StoredEntity, events eventPublisher, schemaFiel
 
 		for i := 0; i < request.list.Len(); i++ {
 			if !alreadyStored[i] && ruleAnswers[i] == ApplyAndPublish {
-				events.publish(model.Create, &Change{Record: request.list.At(i).(model.Model)})
+				publisher.publish(model.Create, &Change{Record: request.list.At(i).(model.Model)})
 			}
 		}
 
@@ -249,7 +249,7 @@ import (
 	"webtyp.com/time"
 )
 
-func updateRecordsHandler(entity StoredEntity, events eventPublisher, schemaFields []model.Field, keyFields []int, updatedAtField int) func(ctx router.Context) {
+func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaFields []model.Field, keyFields []int, updatedAtField int) func(ctx router.Context) {
 	return func(ctx router.Context) {
 		request := UpdateArgs{Record: entity.NewList().Append().(model.Model)}
 		if err := ctx.Decode(&request); err != nil {
@@ -344,7 +344,7 @@ func updateRecordsHandler(entity StoredEntity, events eventPublisher, schemaFiel
 				router.WriteError(ctx, err)
 				return
 			}
-			events.publish(model.Update, &Change{Record: rec, Fields: request.Fields})
+			publisher.publish(model.Update, &Change{Record: rec, Fields: request.Fields})
 		}
 
 		ctx.WriteStatus(statusNoContent)
@@ -363,7 +363,7 @@ import (
 	"webtyp.com/router"
 )
 
-func deleteRecordsHandler(entity StoredEntity, events eventPublisher, keyFields []int) func(ctx router.Context) {
+func deleteRecordsHandler(entity StoredEntity, publisher eventPublisher, keyFields []int) func(ctx router.Context) {
 	return func(ctx router.Context) {
 		var in DeleteArgs
 		if err := ctx.Decode(&request); err != nil {
@@ -430,7 +430,7 @@ func deleteRecordsHandler(entity StoredEntity, events eventPublisher, keyFields 
 
 		for i, row := range deleted {
 			if ruleAnswers[i] == ApplyAndPublish {
-				events.publish(model.Delete, &Change{Record: row})
+				publisher.publish(model.Delete, &Change{Record: row})
 			}
 		}
 

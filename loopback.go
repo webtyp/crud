@@ -12,15 +12,15 @@ import (
 // no RBAC. It panics on a wiring mistake (crud.Mount's error) — it only runs in demos and tests.
 //
 //	caller := crud.Loopback(patients)
-func Loopback(mods ...Module) router.Caller { return newLoopback("", mods) }
+func Loopback(mods ...Module) router.Caller { return newLoopbackCaller("", mods) }
 
 // LoopbackActingAs is Loopback signed in as userID: operations see it in Caller.UserID.
 //
 //	caller := crud.LoopbackActingAs("u1", payments)
-func LoopbackActingAs(userID string, mods ...Module) router.Caller { return newLoopback(userID, mods) }
+func LoopbackActingAs(userID string, mods ...Module) router.Caller { return newLoopbackCaller(userID, mods) }
 
-func newLoopback(userID string, mods []Module) router.Caller {
-	reg := &loopReg{}
+func newLoopbackCaller(userID string, mods []Module) router.Caller {
+	reg := &loopbackRegistry{}
 	for _, m := range mods {
 		if m == nil {
 			continue
@@ -34,53 +34,53 @@ func newLoopback(userID string, mods []Module) router.Caller {
 			panic(err.Error())
 		}
 	}
-	return &loopCaller{reg: reg, userID: userID}
+	return &loopbackCaller{reg: reg, userID: userID}
 }
 
-type loopReg struct {
-	ops    []loopOp
+type loopbackRegistry struct {
+	ops    []loopbackOperation
 	module string
 }
 
-type loopOp struct {
+type loopbackOperation struct {
 	name string
 	h    router.HandlerFunc
 }
 
-func (r *loopReg) Operation(name string, h router.HandlerFunc) router.Route {
+func (r *loopbackRegistry) Operation(name string, h router.HandlerFunc) router.Route {
 	qualified := r.module + "." + name
-	r.ops = append(r.ops, loopOp{name: qualified, h: h})
-	return loopRoute{}
+	r.ops = append(r.ops, loopbackOperation{name: qualified, h: h})
+	return loopbackRoute{}
 }
 
-func (r *loopReg) find(name string) (loopOp, bool) {
+func (r *loopbackRegistry) find(name string) (loopbackOperation, bool) {
 	for i := range r.ops {
 		if r.ops[i].name == name {
 			return r.ops[i], true
 		}
 	}
-	return loopOp{}, false
+	return loopbackOperation{}, false
 }
 
-var _ router.OperationRegistry = (*loopReg)(nil)
+var _ router.OperationRegistry = (*loopbackRegistry)(nil)
 
-type loopRoute struct{}
+type loopbackRoute struct{}
 
-func (r loopRoute) Requires(_ model.Resource, _ model.Action) router.Route { return r }
-func (r loopRoute) Authenticated() router.Route                            { return r }
-func (r loopRoute) Public() router.Route                                   { return r }
-func (r loopRoute) RequiresMFA() router.Route                              { return r }
-func (r loopRoute) Accepts(_ model.Fielder) router.Route                   { return r }
-func (r loopRoute) Describe(_ string) router.Route                        { return r }
+func (r loopbackRoute) Requires(_ model.Resource, _ model.Action) router.Route { return r }
+func (r loopbackRoute) Authenticated() router.Route                            { return r }
+func (r loopbackRoute) Public() router.Route                                   { return r }
+func (r loopbackRoute) RequiresMFA() router.Route                              { return r }
+func (r loopbackRoute) Accepts(_ model.Fielder) router.Route                   { return r }
+func (r loopbackRoute) Describe(_ string) router.Route                        { return r }
 
-var _ router.Route = loopRoute{}
+var _ router.Route = loopbackRoute{}
 
-type loopCaller struct {
-	reg    *loopReg
+type loopbackCaller struct {
+	reg    *loopbackRegistry
 	userID string
 }
 
-func (c *loopCaller) Call(op string, args model.Encodable, into model.Decodable, done func(err error)) {
+func (c *loopbackCaller) Call(op string, args model.Encodable, into model.Decodable, done func(err error)) {
 	entry, ok := c.reg.find(op)
 	if !ok {
 		if done != nil {
@@ -99,12 +99,12 @@ func (c *loopCaller) Call(op string, args model.Encodable, into model.Decodable,
 		return
 	}
 
-	ctx := &loopCtx{body: buf, userID: c.userID}
+	ctx := &loopbackContext{body: buf, userID: c.userID}
 	entry.h(ctx)
 
 	if ctx.status >= 400 {
 		if done != nil {
-			done(newLoopError(ctx.status, ctx.out))
+			done(newLoopbackError(ctx.status, ctx.out))
 		}
 		return
 	}
@@ -122,13 +122,13 @@ func (c *loopCaller) Call(op string, args model.Encodable, into model.Decodable,
 	}
 }
 
-func (c *loopCaller) Dispatch(op string, args model.Encodable) {
+func (c *loopbackCaller) Dispatch(op string, args model.Encodable) {
 	c.Call(op, args, nil, nil)
 }
 
-var _ router.Caller = (*loopCaller)(nil)
+var _ router.Caller = (*loopbackCaller)(nil)
 
-type loopCtx struct {
+type loopbackContext struct {
 	body      []byte
 	out       []byte
 	status    int
@@ -137,31 +137,31 @@ type loopCtx struct {
 	assurance model.Assurance
 }
 
-func (c *loopCtx) Method() string              { return "" }
-func (c *loopCtx) Path() string                { return "" }
-func (c *loopCtx) Body() []byte                { return c.body }
-func (c *loopCtx) GetHeader(_ string) string   { return "" }
-func (c *loopCtx) SetHeader(_, _ string)       {}
-func (c *loopCtx) WriteStatus(code int)        { c.status = code }
-func (c *loopCtx) Write(b []byte) (int, error) { c.out = append(c.out, b...); return len(b), nil }
-func (c *loopCtx) SetValue(key, value string) {
+func (c *loopbackContext) Method() string              { return "" }
+func (c *loopbackContext) Path() string                { return "" }
+func (c *loopbackContext) Body() []byte                { return c.body }
+func (c *loopbackContext) GetHeader(_ string) string   { return "" }
+func (c *loopbackContext) SetHeader(_, _ string)       {}
+func (c *loopbackContext) WriteStatus(code int)        { c.status = code }
+func (c *loopbackContext) Write(b []byte) (int, error) { c.out = append(c.out, b...); return len(b), nil }
+func (c *loopbackContext) SetValue(key, value string) {
 	c.values = append(c.values, fmt.KeyValue{Key: key, Value: value})
 }
-func (c *loopCtx) Param(_ string) string                 { return "" }
-func (c *loopCtx) SetCookie(_ router.Cookie)             {}
-func (c *loopCtx) Cookie(_ string) (router.Cookie, bool) { return router.Cookie{}, false }
-func (c *loopCtx) SetUserID(id string)                   { c.userID = id }
-func (c *loopCtx) UserID() string                        { return c.userID }
+func (c *loopbackContext) Param(_ string) string                 { return "" }
+func (c *loopbackContext) SetCookie(_ router.Cookie)             {}
+func (c *loopbackContext) Cookie(_ string) (router.Cookie, bool) { return router.Cookie{}, false }
+func (c *loopbackContext) SetUserID(id string)                   { c.userID = id }
+func (c *loopbackContext) UserID() string                        { return c.userID }
 
-func (c *loopCtx) SetAssurance(a model.Assurance) { c.assurance = a }
-func (c *loopCtx) Assurance() model.Assurance {
+func (c *loopbackContext) SetAssurance(a model.Assurance) { c.assurance = a }
+func (c *loopbackContext) Assurance() model.Assurance {
 	if c.userID == "" {
 		return model.AssuranceNone
 	}
 	return c.assurance
 }
 
-func (c *loopCtx) Value(key string) string {
+func (c *loopbackContext) Value(key string) string {
 	for i := range c.values {
 		if c.values[i].Key == key {
 			return c.values[i].Value
@@ -170,11 +170,11 @@ func (c *loopCtx) Value(key string) string {
 	return ""
 }
 
-func (c *loopCtx) Decode(into model.Decodable) error {
+func (c *loopbackContext) Decode(into model.Decodable) error {
 	return json.Decode(c.Body(), into)
 }
 
-func (c *loopCtx) Encode(v model.Encodable) error {
+func (c *loopbackContext) Encode(v model.Encodable) error {
 	var out []byte
 	if err := json.Encode(v, &out); err != nil {
 		return err
@@ -183,23 +183,23 @@ func (c *loopCtx) Encode(v model.Encodable) error {
 	return err
 }
 
-var _ router.Context = (*loopCtx)(nil)
+var _ router.Context = (*loopbackContext)(nil)
 
-type loopError struct {
+type loopbackError struct {
 	status int
 	body   string
 	p      router.Problem
 }
 
-func newLoopError(status int, out []byte) error {
-	e := &loopError{status: status, body: string(out)}
+func newLoopbackError(status int, out []byte) error {
+	e := &loopbackError{status: status, body: string(out)}
 	if len(out) > 0 && out[0] == '{' {
 		_ = json.Decode(out, &e.p)
 	}
 	return e
 }
 
-func (e *loopError) Error() string {
+func (e *loopbackError) Error() string {
 	text := e.p.Detail
 	if text == "" {
 		text = e.body
@@ -207,5 +207,5 @@ func (e *loopError) Error() string {
 	return fmt.Sprintf("loopback: %d %s", e.status, text)
 }
 
-func (e *loopError) Kind() model.ErrorKind { return router.KindOfStatus(e.status) }
-func (e *loopError) FailedField() string   { return e.p.Field }
+func (e *loopbackError) Kind() model.ErrorKind { return router.KindOfStatus(e.status) }
+func (e *loopbackError) FailedField() string   { return e.p.Field }

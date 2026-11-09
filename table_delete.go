@@ -3,48 +3,48 @@ package crud
 import (
 	"webtyp.com/model"
 	"webtyp.com/router"
-	"strings"
+	"webtyp.com/fmt"
 )
 
-func deleteHandler(t Table, pk []int) func(ctx router.Context) {
+func deleteRecordsHandler(entity Table, keyFields []int) func(ctx router.Context) {
 	return func(ctx router.Context) {
-		var in DeleteArgs
-		if err := ctx.Decode(&in); err != nil {
+		var request DeleteArgs
+		if err := ctx.Decode(&request); err != nil {
 			router.WriteError(ctx, ErrCannotRead)
 			return
 		}
-		if err := validateIDs(in.IDs, in.hasEmpty, in.tooMany); err != nil {
+		if err := validateIDs(request.IDs, request.hasEmpty, request.tooMany); err != nil {
 			router.WriteError(ctx, err)
 			return
 		}
 
-		if len(in.IDs) > 1 {
-			if _, ok := t.Store.(Transactional); !ok {
+		if len(request.IDs) > 1 {
+			if _, ok := entity.Store.(Transactional); !ok {
 				router.WriteError(ctx, ErrBatchNotAtomic)
 				return
 			}
 		}
 
-		for _, id := range in.IDs {
-			if strings.Contains(id, model.KeySeparator) {
-				if len(pk) == 1 {
+		for _, id := range request.IDs {
+			if fmt.Contains(id, model.KeySeparator) {
+				if len(keyFields) == 1 {
 					router.WriteError(ctx, ErrKeyHasSeparator)
 					return
 				}
 			}
 		}
 
-		caller := callerOf(ctx)
+		caller := currentUserOf(ctx)
 		var deleted []model.Model
 
-		err := atomicStore(t.Store, func(tx Tx) error {
-			for _, id := range in.IDs {
-				old := t.NewList().Append().(model.Model)
+		err := inTransaction(entity.Store, func(tx Tx) error {
+			for _, id := range request.IDs {
+				old := entity.NewList().Append().(model.Model)
 				if err := tx.ReadOne(old, id); err != nil {
 					return err
 				}
-				if t.Delete != nil {
-					if err := t.Delete(caller, tx, old); err != nil {
+				if entity.Delete != nil {
+					if err := entity.Delete(caller, tx, old); err != nil {
 						return err
 					}
 				}
@@ -61,9 +61,9 @@ func deleteHandler(t Table, pk []int) func(ctx router.Context) {
 			return
 		}
 
-		if t.Committed != nil {
+		if entity.Committed != nil {
 			for _, row := range deleted {
-				t.Committed(caller, model.Delete, row, nil)
+				entity.Committed(caller, model.Delete, row, nil)
 			}
 		}
 

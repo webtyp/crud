@@ -4,44 +4,44 @@ import (
 	"webtyp.com/model"
 	"webtyp.com/router"
 	"webtyp.com/time"
-	"strings"
+	"webtyp.com/fmt"
 )
 
-func updateHandler(t Table, schema []model.Field, pk []int, updated int) func(ctx router.Context) {
+func updateRecordsHandler(entity Table, schemaFields []model.Field, keyFields []int, updatedAtField int) func(ctx router.Context) {
 	return func(ctx router.Context) {
-		in := UpdateArgs{Record: t.NewList().Append().(model.Model)}
-		if err := ctx.Decode(&in); err != nil {
+		request := UpdateArgs{Record: entity.NewList().Append().(model.Model)}
+		if err := ctx.Decode(&request); err != nil {
 			router.WriteError(ctx, ErrCannotRead)
 			return
 		}
-		if err := validateIDs(in.IDs, in.hasEmpty, in.tooMany); err != nil {
+		if err := validateIDs(request.IDs, request.hasEmpty, request.tooMany); err != nil {
 			router.WriteError(ctx, err)
 			return
 		}
-		if err := validateUpdateFields(schema, in.Fields, in.Record); err != nil {
+		if err := validateUpdateFields(schemaFields, request.Fields, request.Record); err != nil {
 			router.WriteError(ctx, err)
 			return
 		}
 
-		if len(in.IDs) > 1 {
-			if _, ok := t.Store.(Transactional); !ok {
+		if len(request.IDs) > 1 {
+			if _, ok := entity.Store.(Transactional); !ok {
 				router.WriteError(ctx, ErrBatchNotAtomic)
 				return
 			}
 		}
 
-		for _, id := range in.IDs {
-			if strings.Contains(id, model.KeySeparator) {
-				if len(pk) == 1 {
+		for _, id := range request.IDs {
+			if fmt.Contains(id, model.KeySeparator) {
+				if len(keyFields) == 1 {
 					router.WriteError(ctx, ErrKeyHasSeparator)
 					return
 				}
 			}
 		}
 
-		caller := callerOf(ctx)
-		fields := in.Fields
-		if updated >= 0 {
+		caller := currentUserOf(ctx)
+		fields := request.Fields
+		if updatedAtField >= 0 {
 			hasUpdated := false
 			for _, f := range fields {
 				if f == FieldUpdatedAt {
@@ -54,21 +54,21 @@ func updateHandler(t Table, schema []model.Field, pk []int, updated int) func(ct
 			}
 		}
 
-		err := atomicStore(t.Store, func(tx Tx) error {
-			for _, id := range in.IDs {
-				old := t.NewList().Append().(model.Model)
+		err := inTransaction(entity.Store, func(tx Tx) error {
+			for _, id := range request.IDs {
+				old := entity.NewList().Append().(model.Model)
 				if err := tx.ReadOne(old, id); err != nil {
 					return err
 				}
-				next := in.Record
-				if err := setKey(next, pk, id); err != nil {
+				next := request.Record
+				if err := setKeyValue(next, keyFields, id); err != nil {
 					return err
 				}
-				if updated >= 0 {
-					setInt(next, updated, int64(time.NowNano()))
+				if updatedAtField >= 0 {
+					setIntField(next, updatedAtField, int64(time.NowNano()))
 				}
-				if t.Update != nil {
-					if err := t.Update(caller, tx, old, next, in.Fields); err != nil {
+				if entity.Update != nil {
+					if err := entity.Update(caller, tx, old, next, request.Fields); err != nil {
 						return err
 					}
 				}
@@ -84,11 +84,11 @@ func updateHandler(t Table, schema []model.Field, pk []int, updated int) func(ct
 			return
 		}
 
-		if t.Committed != nil {
-			for _, id := range in.IDs {
-				next := in.Record
-				setKey(next, pk, id)
-				t.Committed(caller, model.Update, next, in.Fields)
+		if entity.Committed != nil {
+			for _, id := range request.IDs {
+				next := request.Record
+				setKeyValue(next, keyFields, id)
+				entity.Committed(caller, model.Update, next, request.Fields)
 			}
 		}
 
