@@ -79,7 +79,7 @@ func (a *ReadArgs) DecodeFields(r model.FieldReader) {
 	}
 }
 
-func (r *operationMounter) Read(m model.ModuleNaming, newFilter func() model.Model, read func(c Caller, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route {
+func (r *operationMounter) Read(m model.ModuleNaming, newFilter func() model.Model, read func(c CurrentUser, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route {
 	if m == nil || read == nil {
 		return r.failMount(ErrNilFunction)
 	}

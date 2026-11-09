@@ -5,11 +5,11 @@ import (
 	"webtyp.com/storage"
 )
 
-// Caller is who runs the operation, filled by crud from the authenticated session —
-// never from the request body. UserID is "" only on a read the app declared public.
+// CurrentUser is who runs the operation, filled by crud from the authenticated session — never from the request body.
+// UserID is "" only on an action the app declared public.
 //
-// Example: func(c crud.Caller, list model.ModelSlice) error { return m.CreatePayments(c.UserID, …) }
-type Caller struct {
+// Example: func(a crud.CurrentUser, tx crud.Tx, p *Payment, m *Module) (crud.RuleAnswer, error) { p.CreatedBy = a.UserID; … }
+type CurrentUser struct {
 	UserID string
 }
 
@@ -26,7 +26,7 @@ type Registry interface {
 	// Table mounts the actions t.Model allows, persisted by t.Store. ormc's Mount<Entity> is its only caller.
 	Table(t Table)
 	// Read mounts a read of a model that is not a table (a report, a derived view), answered by read.
-	Read(m model.ModuleNaming, newFilter func() model.Model, read func(c Caller, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route
+	Read(m model.ModuleNaming, newFilter func() model.Model, read func(c CurrentUser, args ReadArgs, filter model.Model) (model.ModelSlice, error)) Route
 }
 
 // Table is one table a module offers. ormc builds it from typed hooks; a hook is nil when the module has no rule.
@@ -34,12 +34,12 @@ type Table struct {
 	Model     model.Model            // a zero record; must implement model.Allower with Allow() != 0
 	NewList   func() model.ModelSlice
 	Store     Store
-	Create    func(c Caller, tx Tx, rec model.Model) error                       // per record, before insert, inside the transaction
-	Update    func(c Caller, tx Tx, old, next model.Model, fields []string) error // per id; old is the stored row, next carries only fields
-	Delete    func(c Caller, tx Tx, rec model.Model) error                       // per id, before delete; rec is the stored row
-	Search    func(c Caller, text string) ([]storage.Condition, error)          // replaces the default search; AND-only conditions
+	Create    func(c CurrentUser, tx Tx, rec model.Model) error                       // per record, before insert, inside the transaction
+	Update    func(c CurrentUser, tx Tx, old, next model.Model, fields []string) error // per id; old is the stored row, next carries only fields
+	Delete    func(c CurrentUser, tx Tx, rec model.Model) error                       // per id, before delete; rec is the stored row
+	Search    func(c CurrentUser, text string) ([]storage.Condition, error)          // replaces the default search; AND-only conditions
 	NewFilter func() model.Model                                                 // typed filter; equality on its non-empty fields
-	Committed func(c Caller, action model.Action, rec model.Model, fields []string) // after commit, once per record (events); fields = the updated fields on Update, nil otherwise
+	Committed func(c CurrentUser, action model.Action, rec model.Model, fields []string) // after commit, once per record (events); fields = the updated fields on Update, nil otherwise
 	MFA       model.Action                                                       // actions that require a second factor
 }
 

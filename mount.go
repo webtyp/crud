@@ -61,4 +61,4 @@ type failedRoute struct{}
 func (failedRoute) RequiresMFA() Route    { return failedRoute{} }
 func (failedRoute) Describe(string) Route { return failedRoute{} }
 
-func currentUserOf(ctx router.Context) Caller { return Caller{UserID: ctx.UserID()} }
+func currentUserOf(ctx router.Context) CurrentUser { return CurrentUser{UserID: ctx.UserID()} }

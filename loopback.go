@@ -14,7 +14,7 @@ import (
 //	caller := crud.Loopback(patients)
 func Loopback(mods ...Module) router.Caller { return newLoopbackCaller("", mods) }
 
-// LoopbackActingAs is Loopback signed in as userID: operations see it in Caller.UserID.
+// LoopbackActingAs is Loopback signed in as userID: operations see it in CurrentUser.UserID.
 //
 //	caller := crud.LoopbackActingAs("u1", payments)
 func LoopbackActingAs(userID string, mods ...Module) router.Caller { return newLoopbackCaller(userID, mods) }
