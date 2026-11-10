@@ -158,7 +158,7 @@ func TestStoredEntity_HookWithoutActionFailsMount(t *testing.T) {
 		Store:   newMemStore(),
 		Rules:   declareRules(model.Create|model.Read, 0),
 		Update: func(c crud.CurrentUser, tx crud.Tx, old, next model.Model, fields []string) (crud.RuleAnswer, error) {
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 	}})
 	if err == nil {
@@ -220,9 +220,9 @@ func TestStoredEntity_CreateBatchIsAtomic(t *testing.T) {
 		Rules:   declareRules(model.AllActions, model.Create),
 		Create: func(c crud.CurrentUser, tx crud.Tx, rec model.Model) (crud.RuleAnswer, error) {
 			if rec.(*tRec).Name == "fail" {
-				return 0, model.Conflict("hook fail")
+				return crud.RuleAnswer{}, model.Conflict("hook fail")
 			}
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 	}}
 	caller := crud.LoopbackActingAs(nil, "u1", mod)
@@ -285,9 +285,9 @@ func TestStoredEntity_UpdateHookSeesOldAndNext(t *testing.T) {
 		Rules:   declareRules(model.AllActions, model.Update),
 		Update: func(c crud.CurrentUser, tx crud.Tx, old, next model.Model, fields []string) (crud.RuleAnswer, error) {
 			if old.(*tRec).Name == "locked" {
-				return 0, model.Conflict("reject")
+				return crud.RuleAnswer{}, model.Conflict("reject")
 			}
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 	}}
 	caller := crud.LoopbackActingAs(nil, "u1", mod)
@@ -621,7 +621,7 @@ func TestStoredEntity_PublicCreateWithoutSession(t *testing.T) {
 		Store:   newMemStore(),
 		Rules:   declareRules(model.AllActions, model.Create),
 		Create: func(c crud.CurrentUser, tx crud.Tx, rec model.Model) (crud.RuleAnswer, error) {
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 	}})
 	if !reg.Has("t_create") {

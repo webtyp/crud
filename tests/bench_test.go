@@ -22,13 +22,13 @@ func benchModule(withRule bool) (*testModule, *eventRecorder) {
 	if withRule {
 		entity.Rules = declareRules(model.AllActions, model.Create|model.Update|model.Delete)
 		entity.Create = func(a crud.CurrentUser, tx crud.Tx, r model.Model) (crud.RuleAnswer, error) {
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		}
 		entity.Update = func(a crud.CurrentUser, tx crud.Tx, old, next model.Model, fields []string) (crud.RuleAnswer, error) {
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		}
 		entity.Delete = func(a crud.CurrentUser, tx crud.Tx, r model.Model) (crud.RuleAnswer, error) {
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		}
 	}
 	return &testModule{table: entity}, rec

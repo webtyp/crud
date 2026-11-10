@@ -165,7 +165,7 @@ func TestWrite_StoreFailureRollsBackAndPublishesNothing(t *testing.T) {
 			Store:   fs,
 			Rules:   declareRules(model.AllActions, model.Create),
 			Create: func(c crud.CurrentUser, tx crud.Tx, m model.Model) (crud.RuleAnswer, error) {
-				return crud.ApplyAndPublish, nil
+				return crud.ApplyAndPublish(), nil
 			},
 		}}
 		caller := crud.LoopbackActingAs(rec, "u1", mod)
@@ -193,7 +193,7 @@ func TestWrite_StoreFailureRollsBackAndPublishesNothing(t *testing.T) {
 			Store:   fs,
 			Rules:   declareRules(model.AllActions, model.Update),
 			Update: func(c crud.CurrentUser, tx crud.Tx, old, next model.Model, fields []string) (crud.RuleAnswer, error) {
-				return crud.ApplyAndPublish, nil
+				return crud.ApplyAndPublish(), nil
 			},
 		}}
 		caller := crud.LoopbackActingAs(rec, "u1", mod)
@@ -223,7 +223,7 @@ func TestWrite_StoreFailureRollsBackAndPublishesNothing(t *testing.T) {
 			Store:   fs,
 			Rules:   declareRules(model.AllActions, model.Delete),
 			Delete: func(c crud.CurrentUser, tx crud.Tx, old model.Model) (crud.RuleAnswer, error) {
-				return crud.ApplyAndPublish, nil
+				return crud.ApplyAndPublish(), nil
 			},
 		}}
 		caller := crud.LoopbackActingAs(rec, "u1", mod)
@@ -410,10 +410,10 @@ func TestWrite_ZeroAnswerIsRefusedOnUpdateAndDelete(t *testing.T) {
 		Store:   store,
 		Rules:   declareRules(model.AllActions, model.Update|model.Delete),
 		Update: func(c crud.CurrentUser, tx crud.Tx, old, next model.Model, fields []string) (crud.RuleAnswer, error) {
-			return 0, nil
+			return crud.RuleAnswer{}, nil
 		},
 		Delete: func(c crud.CurrentUser, tx crud.Tx, old model.Model) (crud.RuleAnswer, error) {
-			return 0, nil
+			return crud.RuleAnswer{}, nil
 		},
 	}}
 	caller := crud.LoopbackActingAs(rec, "u1", mod)
@@ -515,13 +515,13 @@ func TestWrite_OneRecordWithRuleOpensOneTransaction(t *testing.T) {
 		Store:   cs,
 		Rules:   declareRules(model.AllActions, model.Create|model.Update|model.Delete),
 		Create: func(c crud.CurrentUser, tx crud.Tx, m model.Model) (crud.RuleAnswer, error) {
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 		Update: func(c crud.CurrentUser, tx crud.Tx, old, next model.Model, fields []string) (crud.RuleAnswer, error) {
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 		Delete: func(c crud.CurrentUser, tx crud.Tx, old model.Model) (crud.RuleAnswer, error) {
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 	}}
 	caller := crud.LoopbackActingAs(nil, "u1", mod)

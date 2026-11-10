@@ -9,14 +9,15 @@ In distributed services and multi-tenant architectures, hand-wiring persistence 
 
 | Without `crud` | With `crud` |
 |---|---|
-| Each module wrote hand-crafted database mutations and manual `publish` calls; failures could persist without announcing or announce rolled-back data | Domain rules only answer `crud.RuleAnswer` (`ApplyAndPublish` or `ApplyWithoutPublishing`); `crud` commits before publishing |
+| Each module wrote hand-crafted database mutations and manual `publish` calls; failures could persist without announcing or announce rolled-back data | Domain rules only answer `crud.RuleAnswer` (`ApplyAndPublish()` or `ApplyWithoutPublishing()`); `crud` commits before publishing |
 | Transports and callers accessed raw database tables or forged client-supplied tenant identifiers | `crud` validates schema, boundaries, and passes verified identity via [`crud.CurrentUser`](contract.go) |
+| Non-atomic external calls caused inconsistent data | `crud` orchestrates external calls transactionally alongside the record using [`crud.CallQueue`](result.go) |
 | Generated code drifted silently from `definition.go` specifications | [`crud.Mount`](mount.go) compares registered entities and rules against [`model.ModuleDefinition`](contract.go) at startup |
 
 ## Before You Start
 
 - Models implement [`model.Model`](contract.go) and declare permissions via [`model.Allower`](contract.go).
-- Domain rules return [`crud.RuleAnswer`](result.go) (`crud.ApplyAndPublish` or `crud.ApplyWithoutPublishing`).
+- Domain rules return [`crud.RuleAnswer`](result.go) (`crud.ApplyAndPublish()` or `crud.ApplyWithoutPublishing()`).
 - Event subscriptions listen on canonical topics formatted by [`crud.Topic(module, entity, action)`](topic.go) with [`*crud.Change`](change.go) payloads.
 - Transports address operations via [`router.Operation{Module, Entity, Action}`](loopback.go).
 - A `Store` implementation proves itself with `conformance.Run`: round trips, rollback, a duplicate key, a repeated unique column, a conditional update (`Revision`) and eight goroutines racing for one key, one unique value and one revision — exactly one wins. The factory creates a table for every model of `conformance.Models()`.
@@ -81,9 +82,9 @@ func (m *PatientModule) MountOperations(reg crud.Registry) {
 		Create: func(u crud.CurrentUser, tx crud.Tx, rec model.Model) (crud.RuleAnswer, error) {
 			p := rec.(*Patient)
 			if p.Name == "" {
-				return 0, model.Conflict("name required")
+				return crud.RuleAnswer{}, model.Conflict("name required")
 			}
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 	})
 }
@@ -117,7 +118,7 @@ func SubscribePatients(sub events.Subscriber) {
 | [`stored_entity_update.go`](stored_entity_update.go) | Partial field updates and change tracking |
 | [`stored_entity_delete.go`](stored_entity_delete.go) | Transactional record deletion and event publishing |
 | [`stored_entity_read.go`](stored_entity_read.go) | Record and query resolution with automatic limit capping |
-| [`result.go`](result.go) | `RuleAnswer` decision flags (`ApplyAndPublish`, `ApplyWithoutPublishing`) |
+| [`result.go`](result.go) | `RuleAnswer` decision functions (`ApplyAndPublish()`, `ApplyWithoutPublishing()`), `ExternalCall`, `CallQueue` |
 | [`change.go`](change.go) | `Change` event payload structure encoding touched fields and record state |
 | [`topic.go`](topic.go) | Canonical event topic generation `Topic(module, entity, action)` |
 | [`mount.go`](mount.go) | `crud.Mount` operation registration and consistency verification |

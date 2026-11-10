@@ -17,7 +17,7 @@ type Query struct {
 // Tx reads and writes the rows of the store's database, so a rule may read and write other tables of the same tenant class through tx:
 //
 //	Create: func(c crud.CurrentUser, tx crud.Tx, order model.Model) (crud.RuleAnswer, error) {
-//		return crud.ApplyAndPublish, tx.UpdateFields(&inventory, order.(*Order).ProductID, []string{"stock"})
+//		return crud.ApplyAndPublish(), tx.UpdateFields(&inventory, order.(*Order).ProductID, []string{"stock"})
 //	}
 //
 // A Store scoped to a tenant applies the tenant to every call.

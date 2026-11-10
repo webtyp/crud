@@ -13,13 +13,17 @@ flowchart TD
     B -->|"AddMyBusinessRule"| C["rule(actor, tx, rec) → (RuleAnswer, error)"]
     C -->|"error"| X
     C -->|"zero RuleAnswer"| X2["ErrNoAnswer: rolled back, nothing published"]
-    C -->|"ApplyAndPublish / ApplyWithoutPublishing"| D
+    C -->|"ApplyAndPublish() / ApplyWithoutPublishing()"| D["3b. store & queue external calls inside transaction"]
     S --> F{"5. announce?"}
     D --> E["4. commit"]
     E -->|"commit failed"| X
     E --> F
     F -->|"HaveNoBusinessRule or ApplyAndPublish"| G["publish Topic(module, entity, action) with *Change"]
     F -->|"ApplyWithoutPublishing"| H["stored, nothing published"]
+    E --> EC{"orchestrate external calls"}
+    EC -->|"WaitForReply"| EX["run inline within MaxWaitSeconds"]
+    EC -->|"RetryInBackground"| BG["queued for background runner"]
+    EC -->|"WaitForConfirmation"| CF["queued until ConfirmCall"]
 ```
 
 ## Walkthrough

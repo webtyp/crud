@@ -66,6 +66,7 @@ func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 		}
 
 		ruleAnswers := make([]RuleAnswer, len(request.IDs))
+		var allReplies []pendingReply
 		simple := len(request.IDs) == 1 && entity.Update == nil
 		err := runWrite(entity.Store, simple, func(tx Tx) error {
 			for i, id := range request.IDs {
@@ -83,7 +84,7 @@ func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 				if revisionField >= 0 {
 					setIntField(next, revisionField, expectedRevision+1)
 				}
-				answer := ApplyAndPublish // a HaveNoBusinessRule action is plain storage: it always announces
+				answer := ApplyAndPublish() // a HaveNoBusinessRule action is plain storage: it always announces
 				if entity.Update != nil {
 					res, err := entity.Update(currentUser, tx, old, next, request.Fields)
 					if err != nil {
@@ -94,6 +95,11 @@ func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 					}
 					answer = res
 				}
+				replies, err := enqueueCalls(entity, tx, publisher, next, id, schemaFields, answer)
+				if err != nil {
+					return err
+				}
+				allReplies = append(allReplies, replies...)
 				if revisionField >= 0 {
 					revisionName := schemaFields[revisionField].Name
 					updateFields := make([]string, len(fields)+1)
@@ -133,7 +139,7 @@ func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 		}
 
 		for i, id := range request.IDs {
-			if ruleAnswers[i] != ApplyAndPublish {
+			if !ruleAnswers[i].publish {
 				continue
 			}
 			rec := entity.NewList().Append().(model.Model)
@@ -144,6 +150,7 @@ func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 			}
 			publisher.publish(model.Update, &Change{Record: rec, Fields: request.Fields})
 		}
+		executeReplies(entity, currentUser, allReplies)
 
 		ctx.WriteStatus(statusNoContent)
 	}

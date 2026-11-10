@@ -25,6 +25,13 @@ const (
 //
 //	if err := crud.Mount(reg, nil, broker, patients); err != nil { return err }
 func Mount(reg router.OperationRegistry, public []Public, pub events.Publisher, m Module) error {
+	return MountWithQueue(reg, public, pub, nil, m)
+}
+
+// MountWithQueue mounts m's operations on a transport's registry, providing q for orchestrating external calls.
+//
+//	if err := crud.MountWithQueue(reg, nil, broker, queue, payments); err != nil { return err }
+func MountWithQueue(reg router.OperationRegistry, public []Public, pub events.Publisher, q CallQueue, m Module) error {
 	def := m.Definition()
 	if err := definitioncheck.CheckModule(def); err != nil {
 		return err
@@ -32,7 +39,7 @@ func Mount(reg router.OperationRegistry, public []Public, pub events.Publisher, 
 	if def.Name != m.ModelName() {
 		return &outOfDateError{module: m.ModelName(), entity: def.Name, what: whatName}
 	}
-	r := &operationMounter{reg: reg, public: public, pub: pub, module: m.ModelName()}
+	r := &operationMounter{reg: reg, public: public, pub: pub, queue: q, module: m.ModelName()}
 	m.MountOperations(r)
 	if r.err != nil {
 		return r.err
@@ -44,6 +51,7 @@ type operationMounter struct {
 	reg             router.OperationRegistry
 	public          []Public
 	pub             events.Publisher // nil: nobody listens
+	queue           CallQueue        // nil: no external calls
 	module          string           // the module's ModelName()
 	mountedEntities []string         // every entity mounted by AddStoredEntity or AddReadOnlyEntity, in order
 	err             error

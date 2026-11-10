@@ -37,17 +37,19 @@ func deleteRecordsHandler(entity StoredEntity, publisher eventPublisher, keyFiel
 		currentUser := currentUserOf(ctx)
 		var deleted []model.Model
 		var ruleAnswers []RuleAnswer
+		var allReplies []pendingReply
 
 		simple := len(request.IDs) == 1 && entity.Delete == nil
 		err := runWrite(entity.Store, simple, func(tx Tx) error {
 			deleted = deleted[:0]
 			ruleAnswers = ruleAnswers[:0]
+			allReplies = allReplies[:0]
 			for _, id := range request.IDs {
 				old := entity.NewList().Append().(model.Model)
 				if err := tx.ReadOne(old, id); err != nil {
 					return err
 				}
-				answer := ApplyAndPublish // a HaveNoBusinessRule action is plain storage: it always announces
+				answer := ApplyAndPublish() // a HaveNoBusinessRule action is plain storage: it always announces
 				if entity.Delete != nil {
 					res, err := entity.Delete(currentUser, tx, old)
 					if err != nil {
@@ -58,6 +60,11 @@ func deleteRecordsHandler(entity StoredEntity, publisher eventPublisher, keyFiel
 					}
 					answer = res
 				}
+				replies, err := enqueueCalls(entity, tx, publisher, old, id, old.Schema(), answer)
+				if err != nil {
+					return err
+				}
+				allReplies = append(allReplies, replies...)
 				if err := tx.Delete(old, id); err != nil {
 					return err
 				}
@@ -73,10 +80,11 @@ func deleteRecordsHandler(entity StoredEntity, publisher eventPublisher, keyFiel
 		}
 
 		for i, row := range deleted {
-			if ruleAnswers[i] == ApplyAndPublish {
+			if ruleAnswers[i].publish {
 				publisher.publish(model.Delete, &Change{Record: row})
 			}
 		}
+		executeReplies(entity, currentUser, allReplies)
 
 		ctx.WriteStatus(statusNoContent)
 	}

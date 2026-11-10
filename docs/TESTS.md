@@ -81,3 +81,8 @@
 | [TestRevision_ClientCannotWriteTheRevision](../tests/revision_test.go) | Revision ClientCannotWriteTheRevision |
 | [TestRevision_StoreWithoutConditionalUpdateFailsMount](../tests/revision_test.go) | Revision StoreWithoutConditionalUpdateFailsMount |
 | [TestWrite_DuplicateKeyIsAlreadyExists](../tests/revision_test.go) | Write DuplicateKeyIsAlreadyExists |
+| [TestExternalCalls_AtomicWithTransaction](../tests/external_calls_test.go) | row and queued call written in single transaction, rollback clears both |
+| [TestExternalCalls_RetryInBackground](../tests/external_calls_test.go) | RetryInBackground retries with backoff and finishes done or failed |
+| [TestExternalCalls_WaitForReply](../tests/external_calls_test.go) | WaitForReply response in time updates fields, timeout or error fails without retry |
+| [TestExternalCalls_WaitForConfirmation](../tests/external_calls_test.go) | WaitForConfirmation stays queued until ConfirmCall or RejectCall |
+| [TestExternalCalls_IdempotencyKey](../tests/external_calls_test.go) | idempotency key is stable queued call ID across attempts |

@@ -33,7 +33,7 @@ func TestMount_HookWithoutDomainIsOutOfDate(t *testing.T) {
 		Store:   newMemStore(),
 		Rules:   declareRules(model.AllActions, 0),
 		Create: func(a crud.CurrentUser, tx crud.Tx, rec model.Model) (crud.RuleAnswer, error) {
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 	}}
 	err := crud.Mount(nil, nil, nil, mod)
@@ -200,7 +200,7 @@ func TestMount_ConsistentModuleMounts(t *testing.T) {
 		Store:   newMemStore(),
 		Rules:   declareRules(model.AllActions, model.Create),
 		Create: func(a crud.CurrentUser, tx crud.Tx, rec model.Model) (crud.RuleAnswer, error) {
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 	}}
 	reg := &mockRouter{}

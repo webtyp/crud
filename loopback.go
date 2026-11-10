@@ -14,17 +14,31 @@ import (
 //
 //	caller := crud.Loopback(nil, patients)
 func Loopback(pub events.Publisher, mods ...Module) router.Caller {
-	return newLoopbackCaller(pub, "", mods)
+	return LoopbackWithQueue(pub, nil, mods...)
+}
+
+// LoopbackWithQueue is Loopback with a CallQueue for orchestrating external calls.
+//
+//	caller := crud.LoopbackWithQueue(broker, queue, payments)
+func LoopbackWithQueue(pub events.Publisher, q CallQueue, mods ...Module) router.Caller {
+	return newLoopbackCaller(pub, "", q, mods)
 }
 
 // LoopbackActingAs is Loopback signed in as userID: operations see it in CurrentUser.UserID.
 //
 //	caller := crud.LoopbackActingAs(broker, "u1", payments)
 func LoopbackActingAs(pub events.Publisher, userID string, mods ...Module) router.Caller {
-	return newLoopbackCaller(pub, userID, mods)
+	return LoopbackActingAsWithQueue(pub, userID, nil, mods...)
 }
 
-func newLoopbackCaller(pub events.Publisher, userID string, mods []Module) router.Caller {
+// LoopbackActingAsWithQueue is LoopbackActingAs with a CallQueue for orchestrating external calls.
+//
+//	caller := crud.LoopbackActingAsWithQueue(broker, "u1", queue, payments)
+func LoopbackActingAsWithQueue(pub events.Publisher, userID string, q CallQueue, mods ...Module) router.Caller {
+	return newLoopbackCaller(pub, userID, q, mods)
+}
+
+func newLoopbackCaller(pub events.Publisher, userID string, q CallQueue, mods []Module) router.Caller {
 	reg := &loopbackRegistry{}
 	for _, m := range mods {
 		if m == nil {
@@ -34,7 +48,7 @@ func newLoopbackCaller(pub events.Publisher, userID string, mods []Module) route
 		if name == "" {
 			panic("crud: loopback: a module returned an empty ModelName() — every operation must be qualified by its owning module")
 		}
-		if err := Mount(reg, nil, pub, m); err != nil {
+		if err := MountWithQueue(reg, nil, pub, q, m); err != nil {
 			panic(err.Error())
 		}
 	}

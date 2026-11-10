@@ -48,6 +48,14 @@ type StoredEntity struct {
 	// caller sent (the entity is its own filter: `filter.sku` on the wire); text is "" when none was sent.
 	Search func(a CurrentUser, filter model.Model, text string) ([]storage.Condition, error)
 	MFA    model.Action // actions that require a second factor
+	// ExternalCalls lists the external calls declared for this entity in Definition.ExternalCalls.
+	ExternalCalls []model.ExternalCallDefinition
+	// Calls maps call name to its execution function.
+	Calls map[string]ExternalCallFunc
+	// Queue is the durable queue where external calls are written and settled.
+	Queue CallQueue
+	// TenantID optionally extracts the tenant ID from the record. If nil, crud looks for "tenant_id" field in Schema.
+	TenantID func(rec model.Model) string
 }
 
 // Public is one action the app opens to visitors without a session (reads and writes). Only the app lists them.

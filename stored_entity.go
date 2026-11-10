@@ -70,6 +70,16 @@ func (r *operationMounter) AddStoredEntity(entity StoredEntity) {
 		r.failMount(&outOfDateError{module: r.module, entity: def.Name, what: whatRules, actions: bad})
 		return
 	}
+	if entity.Queue == nil {
+		entity.Queue = r.queue
+	}
+	if len(entity.ExternalCalls) > 0 {
+		defForCalls := model.Definition{Name: entity.Model.ModelName(), ExternalCalls: entity.ExternalCalls}
+		if err := defForCalls.ValidateExternalCalls(); err != nil {
+			r.failMount(err)
+			return
+		}
+	}
 	r.mountedEntities = append(r.mountedEntities, def.Name)
 	publisher := eventPublisher{pub: r.pub, module: r.module, entity: def.Name}
 

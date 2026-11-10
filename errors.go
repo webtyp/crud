@@ -25,6 +25,9 @@ type ruleError string
 func (e ruleError) Error() string { return string(e) }
 
 const ErrNoAnswer ruleError = "crud: the rule answered nothing; return crud.ApplyAndPublish or crud.ApplyWithoutPublishing with a nil error, or return an error"
+const ErrUndeclaredCall ruleError = "crud: external call requested by rule is not declared in entity Definition.ExternalCalls"
+const ErrNoCallQueue mountError = "crud: entity requested external calls but no CallQueue was provided; pass CallQueue to crud.MountWithQueue or StoredEntity.Queue"
+
 
 const ErrGeneratedOutOfDate mountError = "crud: the generated code does not match definition.go, so nothing is served; run definitionc and rebuild"
 

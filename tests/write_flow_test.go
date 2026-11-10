@@ -46,7 +46,7 @@ func TestWrite_AnnounceIsPublishedAfterCommit(t *testing.T) {
 		Store:   store,
 		Rules:   declareRules(model.AllActions, model.Create),
 		Create: func(a crud.CurrentUser, tx crud.Tx, r model.Model) (crud.RuleAnswer, error) {
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 	}}
 	caller := crud.LoopbackActingAs(rec, "u1", mod)
@@ -83,7 +83,7 @@ func TestWrite_SilentStoresWithoutPublishing(t *testing.T) {
 		Store:   store,
 		Rules:   declareRules(model.AllActions, model.Create),
 		Create: func(a crud.CurrentUser, tx crud.Tx, r model.Model) (crud.RuleAnswer, error) {
-			return crud.ApplyWithoutPublishing, nil
+			return crud.ApplyWithoutPublishing(), nil
 		},
 	}}
 	caller := crud.LoopbackActingAs(rec, "u1", mod)
@@ -134,7 +134,7 @@ func TestWrite_RuleErrorPublishesNothing(t *testing.T) {
 		Store:   store,
 		Rules:   declareRules(model.AllActions, model.Create),
 		Create: func(a crud.CurrentUser, tx crud.Tx, r model.Model) (crud.RuleAnswer, error) {
-			return 0, model.Conflict("no")
+			return crud.RuleAnswer{}, model.Conflict("no")
 		},
 	}}
 	caller := crud.LoopbackActingAs(rec, "u1", mod)
@@ -160,7 +160,7 @@ func TestWrite_ZeroResultIsRefused(t *testing.T) {
 		Store:   store,
 		Rules:   declareRules(model.AllActions, model.Create),
 		Create: func(a crud.CurrentUser, tx crud.Tx, r model.Model) (crud.RuleAnswer, error) {
-			return 0, nil
+			return crud.RuleAnswer{}, nil
 		},
 	}}
 	caller := crud.LoopbackActingAs(rec, "u1", mod)
@@ -190,9 +190,9 @@ func TestWrite_BatchRollbackPublishesNothing(t *testing.T) {
 		Rules:   declareRules(model.AllActions, model.Create),
 		Create: func(a crud.CurrentUser, tx crud.Tx, r model.Model) (crud.RuleAnswer, error) {
 			if r.(*tRec).ID == "r2" {
-				return 0, model.Conflict("r2 rejected")
+				return crud.RuleAnswer{}, model.Conflict("r2 rejected")
 			}
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 	}}
 	caller := crud.LoopbackActingAs(rec, "u1", mod)
@@ -257,9 +257,9 @@ func TestWrite_UpdateSilentForOneID(t *testing.T) {
 		Rules:   declareRules(model.AllActions, model.Update),
 		Update: func(a crud.CurrentUser, tx crud.Tx, old, next model.Model, fields []string) (crud.RuleAnswer, error) {
 			if old.(*tRec).ID == "a" {
-				return crud.ApplyWithoutPublishing, nil
+				return crud.ApplyWithoutPublishing(), nil
 			}
-			return crud.ApplyAndPublish, nil
+			return crud.ApplyAndPublish(), nil
 		},
 	}}
 	caller := crud.LoopbackActingAs(rec, "u1", mod)

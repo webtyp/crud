@@ -24,8 +24,9 @@ flowchart TD
 2. **[`crud.Registry`](../contract.go):** The restricted mounting interface passed to modules. Only allows mounting entities via `AddStoredEntity` or read-only wire projections via `AddReadOnlyEntity`.
 3. **[`crud.StoredEntity`](../contract.go):** Represents a persistent domain entity. Connects `Store`, declared `model.Rules`, and optional business rules for Create, Update, Delete, or Search.
 4. **[`crud.CurrentUser`](../contract.go):** Explicit actor identity containing `UserID` extracted directly from verified session context—never read from request parameters.
-5. **[`crud.RuleAnswer`](../result.go):** Typed business rule response (`ApplyAndPublish` or `ApplyWithoutPublishing`). The zero value is refused (`ErrNoAnswer`).
-6. **[`crud/conformance`](../conformance/conformance.go):** Test suite proving an implementation of `crud.Store` satisfies its contract with `conformance.Run(t, newStore)`, concurrency included (one winner among racing creates, unique values and conditional updates). `crud` imports no implementation: each store and each driver runs the suite in its own tests (the `orm` store over `storage/mem` in `orm`, over a real database in the driver's tests).
+5. **[`crud.RuleAnswer`](../result.go):** Typed business rule response (`ApplyAndPublish()` or `ApplyWithoutPublishing()`), optionally requesting external calls. The zero value is refused (`ErrNoAnswer`).
+6. **External Calls Orchestration (D58):** Calls declared in `Definition.ExternalCalls` are queued transactionally in `CallQueue` within the write's `tx`. `WaitForReply` runs inline with a timeout; `RetryInBackground` retries with backoff in background; `WaitForConfirmation` waits for provider confirmation via `ConfirmCall` / `RejectCall`.
+7. **[`crud/conformance`](../conformance/conformance.go):** Test suite proving an implementation of `crud.Store` satisfies its contract with `conformance.Run(t, newStore)`, concurrency included (one winner among racing creates, unique values and conditional updates). `crud` imports no implementation: each store and each driver runs the suite in its own tests (the `orm` store over `storage/mem` in `orm`, over a real database in the driver's tests).
 
 ## 3. Execution & Data Flow
 
