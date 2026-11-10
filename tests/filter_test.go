@@ -17,7 +17,7 @@ func (f *byNameFilter) ModelName() string { return "by_name_filter" }
 func (f *byNameFilter) IsNil() bool       { return f == nil }
 func (f *byNameFilter) Schema() []model.Field {
 	return []model.Field{
-		{Name: "name", Type: model.Text(), NotNull: true},
+		{Name: "name", Type: model.Text(), NotNull: true, Permitted: model.Permitted{Maximum: 5}},
 	}
 }
 func (f *byNameFilter) Pointers() []any {
@@ -83,7 +83,7 @@ func TestRead_FilterInvalidIs400(t *testing.T) {
 	var out mockRecordList
 	var err error
 	readArgs := &crud.ReadArgs{
-		Filter: &byNameFilter{Name: ""}, // NotNull violation
+		Filter: &byNameFilter{Name: "toolong"}, // over its Maximum: a filter is checked by its limits, never for required fields
 	}
 	caller.Call(router.Operation{Module: "filtertest", Entity: "mock", Action: model.Read}, readArgs, &out, func(e error) {
 		err = e

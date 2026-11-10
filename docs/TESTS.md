@@ -22,6 +22,7 @@
 | [TestStoredEntity_UpdateHookSeesOldAndNext](../tests/stored_entity_test.go) | hook rejects when `old.name == "locked"` → row unchanged |
 | [TestStoredEntity_SearchDefaultUsesItemLabel](../tests/stored_entity_test.go) | search default uses ItemLabel |
 | [TestStoredEntity_SearchReceivesTheFilterAsAnEntityRecord](../tests/stored_entity_test.go) | the `Search` rule gets a record of the entity with only the fields the caller sent (the entity is its own filter) |
+| [TestStoredEntity_FilterNeedsNoRequiredField](../tests/stored_entity_test.go) | an empty or partial filter is valid even when the entity has a required key or a NotNull field |
 | [TestStoredEntity_SearchRunsWithoutText](../tests/stored_entity_test.go) | the `Search` rule runs on every read, with `text == ""` when none was sent |
 | [TestStoredEntity_SearchHookOrIsRejected](../tests/stored_entity_test.go) | `Search` returns `storage.Or(storage.Eq(...))` → `ErrOrCondition` |
 | [TestStoredEntity_CompositeKeyRoundTrip](../tests/stored_entity_test.go) | composite key round trips properly |

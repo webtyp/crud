@@ -40,7 +40,33 @@ func validateReadArgs(a *ReadArgs) error {
 	if a.Filter == nil {
 		return nil
 	}
-	return model.ValidateInput(model.ActionCreate, a.Filter)
+	return validateFilter(a.Filter)
+}
+
+// validateFilter checks the fields a caller sent as a filter. A filter is a record of the entity with only some fields set, so nothing
+// is required (no key, no NotNull): only a field that carries a value is checked against its limits, and a server-only field must be empty.
+func validateFilter(f model.Model) error {
+	schema := f.Schema()
+	if writesServerOnlyField(schema, f) {
+		return ErrServerOnlyField
+	}
+	ptrs := f.Pointers()
+	for i, field := range schema {
+		if field.ServerOnly || field.Type == nil {
+			continue
+		}
+		switch field.Type.Storage() {
+		case model.FieldText, model.FieldRaw:
+			val, _ := model.ReadStringPtr(ptrs[i])
+			if val == "" {
+				continue
+			}
+			if err := field.Validate(val); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func writesServerOnlyField(schema []model.Field, rec model.Fielder) bool {

@@ -18,9 +18,9 @@ type tRec struct {
 	UpdatedAt int64
 }
 
-func (m *tRec) ModelName() string        { return "t" }
-func (m *tRec) Allow() model.Action      { return model.AllActions }
-func (m *tRec) IsNil() bool              { return m == nil }
+func (m *tRec) ModelName() string   { return "t" }
+func (m *tRec) Allow() model.Action { return model.AllActions }
+func (m *tRec) IsNil() bool         { return m == nil }
 func (m *tRec) EncodeFields(w model.FieldWriter) {
 	w.String("id", m.ID)
 	w.String("name", m.Name)
@@ -60,8 +60,8 @@ func (m *tRec) Schema() []model.Field {
 
 type tRecList []tRec
 
-func (l *tRecList) Append() model.Fielder { *l = append(*l, tRec{}); return &(*l)[len(*l)-1] }
-func (l *tRecList) Len() int             { return len(*l) }
+func (l *tRecList) Append() model.Fielder  { *l = append(*l, tRec{}); return &(*l)[len(*l)-1] }
+func (l *tRecList) Len() int               { return len(*l) }
 func (l *tRecList) At(i int) model.Fielder { return &(*l)[i] }
 func (l *tRecList) EncodeFields(w model.FieldWriter) {
 	a := w.Array("records", len(*l))
@@ -128,11 +128,11 @@ func TestStoredEntity_NotAllowedActionDoesNotExist(t *testing.T) {
 
 type routeStub struct{}
 
-func (routeStub) RequiresMFA() router.Route                             { return routeStub{} }
-func (routeStub) Describe(string) router.Route                          { return routeStub{} }
-func (routeStub) Accepts(args model.Fielder) router.Route               { return routeStub{} }
-func (routeStub) Public() router.Route                                  { return routeStub{} }
-func (routeStub) Authenticated() router.Route                           { return routeStub{} }
+func (routeStub) RequiresMFA() router.Route                              { return routeStub{} }
+func (routeStub) Describe(string) router.Route                           { return routeStub{} }
+func (routeStub) Accepts(args model.Fielder) router.Route                { return routeStub{} }
+func (routeStub) Public() router.Route                                   { return routeStub{} }
+func (routeStub) Authenticated() router.Route                            { return routeStub{} }
 func (routeStub) Requires(r model.Resource, a model.Action) router.Route { return routeStub{} }
 
 type mockRouter struct {
@@ -385,14 +385,68 @@ func TestStoredEntity_SearchRunsWithoutText(t *testing.T) {
 	}
 }
 
+// fRec has a required key and a required number: a filter built from it is valid with none of them sent.
+type fRec struct {
+	ID  string
+	Qty int64
+}
+
+func (m *fRec) ModelName() string   { return "f_rec" }
+func (m *fRec) Allow() model.Action { return model.Read }
+func (m *fRec) IsNil() bool         { return m == nil }
+func (m *fRec) Schema() []model.Field {
+	return []model.Field{
+		{Name: "id", Type: model.Text(), DB: &model.FieldDB{PK: true}},
+		{Name: "qty", Type: model.Int(), NotNull: true},
+	}
+}
+func (m *fRec) Pointers() []any                  { return []any{&m.ID, &m.Qty} }
+func (m *fRec) EncodeFields(w model.FieldWriter) { w.String("id", m.ID); w.Int("qty", m.Qty) }
+func (m *fRec) DecodeFields(r model.FieldReader) {
+	m.ID, _ = r.String("id")
+	m.Qty, _ = r.Int("qty")
+}
+
+type fRecList []*fRec
+
+func (s *fRecList) Len() int                         { return len(*s) }
+func (s *fRecList) At(i int) model.Fielder           { return (*s)[i] }
+func (s *fRecList) Append() model.Fielder            { v := &fRec{}; *s = append(*s, v); return v }
+func (s *fRecList) IsNil() bool                      { return s == nil }
+func (s *fRecList) EncodeFields(_ model.FieldWriter) {}
+func (s *fRecList) DecodeFields(_ model.FieldReader) {}
+
+func TestStoredEntity_FilterNeedsNoRequiredField(t *testing.T) {
+	var got *fRec
+	mod := &testModule{table: crud.StoredEntity{
+		Model:   &fRec{},
+		NewList: func() model.ModelSlice { return &fRecList{} },
+		Store:   newMemStore(),
+		Rules:   declareRules(model.Read, model.Read),
+		Search: func(c crud.CurrentUser, filter model.Model, text string) ([]storage.Condition, error) {
+			got = filter.(*fRec)
+			return nil, nil
+		},
+	}}
+	caller := crud.LoopbackActingAs(nil, "u1", mod)
+	for name, args := range map[string]*crud.ReadArgs{"empty": {}, "partial": {Filter: &fRec{Qty: 3}}} {
+		got = nil
+		var err error
+		caller.Call(router.Operation{Module: "tmod", Entity: "f_rec", Action: model.Read}, args, nil, func(e error) { err = e })
+		if err != nil || got == nil {
+			t.Errorf("%s filter: a filter has no required field, got err %v (hook ran: %v)", name, err, got != nil)
+		}
+	}
+}
+
 type cpKeyRec struct {
 	RoomID string
 	EqID   string
 }
 
-func (m *cpKeyRec) ModelName() string        { return "cp" }
-func (m *cpKeyRec) Allow() model.Action      { return model.AllActions }
-func (m *cpKeyRec) IsNil() bool              { return m == nil }
+func (m *cpKeyRec) ModelName() string   { return "cp" }
+func (m *cpKeyRec) Allow() model.Action { return model.AllActions }
+func (m *cpKeyRec) IsNil() bool         { return m == nil }
 func (m *cpKeyRec) EncodeFields(w model.FieldWriter) {
 	w.String("room_id", m.RoomID)
 	w.String("eq_id", m.EqID)
@@ -415,8 +469,8 @@ func (m *cpKeyRec) Schema() []model.Field {
 
 type cpKeyList []cpKeyRec
 
-func (l *cpKeyList) Append() model.Fielder { *l = append(*l, cpKeyRec{}); return &(*l)[len(*l)-1] }
-func (l *cpKeyList) Len() int             { return len(*l) }
+func (l *cpKeyList) Append() model.Fielder  { *l = append(*l, cpKeyRec{}); return &(*l)[len(*l)-1] }
+func (l *cpKeyList) Len() int               { return len(*l) }
 func (l *cpKeyList) At(i int) model.Fielder { return &(*l)[i] }
 func (l *cpKeyList) EncodeFields(w model.FieldWriter) {
 	a := w.Array("records", len(*l))
@@ -496,9 +550,9 @@ type intKeyRec struct {
 	SpecificDate int64
 }
 
-func (m *intKeyRec) ModelName() string        { return "intkey" }
-func (m *intKeyRec) Allow() model.Action      { return model.AllActions }
-func (m *intKeyRec) IsNil() bool              { return m == nil }
+func (m *intKeyRec) ModelName() string   { return "intkey" }
+func (m *intKeyRec) Allow() model.Action { return model.AllActions }
+func (m *intKeyRec) IsNil() bool         { return m == nil }
 func (m *intKeyRec) EncodeFields(w model.FieldWriter) {
 	w.String("shift_id", m.ShiftID)
 	w.Int("specific_date", m.SpecificDate)
@@ -521,8 +575,8 @@ func (m *intKeyRec) Schema() []model.Field {
 
 type intKeyList []intKeyRec
 
-func (l *intKeyList) Append() model.Fielder { *l = append(*l, intKeyRec{}); return &(*l)[len(*l)-1] }
-func (l *intKeyList) Len() int             { return len(*l) }
+func (l *intKeyList) Append() model.Fielder  { *l = append(*l, intKeyRec{}); return &(*l)[len(*l)-1] }
+func (l *intKeyList) Len() int               { return len(*l) }
 func (l *intKeyList) At(i int) model.Fielder { return &(*l)[i] }
 func (l *intKeyList) EncodeFields(w model.FieldWriter) {
 	a := w.Array("records", len(*l))
