@@ -52,7 +52,7 @@ func TestMount_SearchHookFollowsReadRule(t *testing.T) {
 		NewList: func() model.ModelSlice { return &tRecList{} },
 		Store:   newMemStore(),
 		Rules:   declareRules(model.AllActions, 0),
-		Search: func(a crud.CurrentUser, text string) ([]storage.Condition, error) {
+		Search: func(a crud.CurrentUser, _ model.Model, text string) ([]storage.Condition, error) {
 			return nil, nil
 		},
 	}}

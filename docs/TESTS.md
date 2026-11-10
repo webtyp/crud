@@ -21,6 +21,8 @@
 | [TestStoredEntity_UpdateMissingIsNotFound](../tests/stored_entity_test.go) | update id "nope" → error kind `model.ErrorNotFound` |
 | [TestStoredEntity_UpdateHookSeesOldAndNext](../tests/stored_entity_test.go) | hook rejects when `old.name == "locked"` → row unchanged |
 | [TestStoredEntity_SearchDefaultUsesItemLabel](../tests/stored_entity_test.go) | search default uses ItemLabel |
+| [TestStoredEntity_SearchReceivesTheFilterAsAnEntityRecord](../tests/stored_entity_test.go) | the `Search` rule gets a record of the entity with only the fields the caller sent (the entity is its own filter) |
+| [TestStoredEntity_SearchRunsWithoutText](../tests/stored_entity_test.go) | the `Search` rule runs on every read, with `text == ""` when none was sent |
 | [TestStoredEntity_SearchHookOrIsRejected](../tests/stored_entity_test.go) | `Search` returns `storage.Or(storage.Eq(...))` → `ErrOrCondition` |
 | [TestStoredEntity_CompositeKeyRoundTrip](../tests/stored_entity_test.go) | composite key round trips properly |
 | [TestStoredEntity_CompositeKeyPartRequired](../tests/stored_entity_test.go) | composite key parts are required |

@@ -11,6 +11,9 @@ import (
 func readRecordsHandler(entity StoredEntity, schemaFields []model.Field) func(ctx router.Context) {
 	return func(ctx router.Context) {
 		args := ReadArgs{}
+		if entity.Search != nil {
+			args.Filter = entity.NewList().Append().(model.Model) // the entity is its own filter
+		}
 		if err := ctx.Decode(&args); err != nil {
 			router.WriteError(ctx, ErrCannotRead)
 			return
@@ -43,34 +46,32 @@ func readRecordsHandler(entity StoredEntity, schemaFields []model.Field) func(ct
 		currentUser := currentUserOf(ctx)
 		var conds []storage.Condition
 
-		if args.Search != "" {
-			if entity.Search != nil {
-				hooks, err := entity.Search(currentUser, args.Search)
-				if err != nil {
-					router.WriteError(ctx, err)
-					return
-				}
-				for _, c := range hooks {
-					if c.Logic() == "OR" {
-						router.WriteError(ctx, ErrOrCondition)
-						return
-					}
-				}
-				conds = append(conds, hooks...)
-			} else {
-				var labelField string
-				for _, f := range schemaFields {
-					if f.Item == model.ItemLabel {
-						labelField = f.Name
-						break
-					}
-				}
-				if labelField == "" {
-					router.WriteError(ctx, ErrNoSearchField)
-					return
-				}
-				conds = append(conds, storage.Like(labelField, "%"+fmt.ToLower(args.Search)+"%"))
+		if entity.Search != nil {
+			hooks, err := entity.Search(currentUser, args.Filter, args.Search)
+			if err != nil {
+				router.WriteError(ctx, err)
+				return
 			}
+			for _, c := range hooks {
+				if c.Logic() == "OR" {
+					router.WriteError(ctx, ErrOrCondition)
+					return
+				}
+			}
+			conds = append(conds, hooks...)
+		} else if args.Search != "" {
+			var labelField string
+			for _, f := range schemaFields {
+				if f.Item == model.ItemLabel {
+					labelField = f.Name
+					break
+				}
+			}
+			if labelField == "" {
+				router.WriteError(ctx, ErrNoSearchField)
+				return
+			}
+			conds = append(conds, storage.Like(labelField, "%"+fmt.ToLower(args.Search)+"%"))
 		}
 
 		limit := Cap(args.Limit)

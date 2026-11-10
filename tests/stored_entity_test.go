@@ -326,7 +326,7 @@ func TestStoredEntity_SearchHookOrIsRejected(t *testing.T) {
 		NewList: func() model.ModelSlice { return &tRecList{} },
 		Store:   newMemStore(),
 		Rules:   declareRules(model.AllActions, model.Read),
-		Search: func(c crud.CurrentUser, text string) ([]storage.Condition, error) {
+		Search: func(c crud.CurrentUser, _ model.Model, text string) ([]storage.Condition, error) {
 			return []storage.Condition{storage.Or(storage.Eq("name", "1"))}, nil
 		},
 	}}
@@ -335,6 +335,53 @@ func TestStoredEntity_SearchHookOrIsRejected(t *testing.T) {
 	caller.Call(operationOf(model.Read), &crud.ReadArgs{Search: "an"}, nil, func(e error) { err = e })
 	if err == nil || err.Error() != "loopback: 400 "+string(crud.ErrOrCondition) {
 		t.Errorf("expected ErrOrCondition, got %v", err)
+	}
+}
+
+func TestStoredEntity_SearchReceivesTheFilterAsAnEntityRecord(t *testing.T) {
+	store := newMemStore()
+	store.Create(&tRec{ID: "1", Name: "Ana"})
+	store.Create(&tRec{ID: "2", Name: "Bruno"})
+	var got *tRec
+	mod := &testModule{table: crud.StoredEntity{
+		Model:   &tRec{},
+		NewList: func() model.ModelSlice { return &tRecList{} },
+		Store:   store,
+		Rules:   declareRules(model.AllActions, model.Read),
+		Search: func(c crud.CurrentUser, filter model.Model, text string) ([]storage.Condition, error) {
+			got = filter.(*tRec)
+			return []storage.Condition{storage.Eq("name", got.Name)}, nil
+		},
+	}}
+	caller := crud.LoopbackActingAs(nil, "u1", mod)
+	var list tRecList
+	var err error
+	caller.Call(operationOf(model.Read), &crud.ReadArgs{Filter: &tRec{Name: "Bruno"}}, &list, func(e error) { err = e })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Name != "Bruno" || len(list) != 1 || list[0].Name != "Bruno" {
+		t.Errorf("the hook must get the sent fields in a record of the entity; got %+v, rows %v", got, list)
+	}
+}
+
+func TestStoredEntity_SearchRunsWithoutText(t *testing.T) {
+	called := false
+	mod := &testModule{table: crud.StoredEntity{
+		Model:   &tRec{},
+		NewList: func() model.ModelSlice { return &tRecList{} },
+		Store:   newMemStore(),
+		Rules:   declareRules(model.AllActions, model.Read),
+		Search: func(c crud.CurrentUser, filter model.Model, text string) ([]storage.Condition, error) {
+			called = text == ""
+			return nil, nil
+		},
+	}}
+	caller := crud.LoopbackActingAs(nil, "u1", mod)
+	var err error
+	caller.Call(operationOf(model.Read), &crud.ReadArgs{}, nil, func(e error) { err = e })
+	if err != nil || !called {
+		t.Errorf("the Search rule must run on every read, even with no text; called=%v err=%v", called, err)
 	}
 }
 

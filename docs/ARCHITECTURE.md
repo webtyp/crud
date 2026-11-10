@@ -41,5 +41,6 @@ For details on write operation progression, see [`docs/diagrams/WRITE_FLOW.md`](
 
 - **Startup Consistency Verification:** `crud.Mount` compares the module's declared `Definition()` against what was mounted in `MountOperations()`. If an entity is missing, unexpected, or declared rules mismatch attached hooks, `Mount` refuses to serve (`ErrGeneratedOutOfDate`).
 - **Standardized Operation Identity:** Operations are addressed strictly by `router.Operation{Module, Entity, Action}`, eliminating string manipulation.
+- **The entity is its own filter (D52):** the `Search` rule of a table runs on every read and receives a record of the entity carrying only the fields the caller sent (`filter` on the wire) plus the free text; a read-only model receives the same record as its receiver. There is no separate filter type.
 - **Tenant Isolation (Rule R1):** Search conditions passed to `Store` must evaluate with `Logic() == "AND"`. `OR` conditions are rejected (`ErrOrCondition`) to prevent cross-tenant record leakage in unparenthesized SQL filters.
 - **Defense in Depth (`validate.go`):** Rejects oversized IDs and search terms, prevents client modification of `ServerOnly` fields on write, and validates payloads against declarative model definitions.
