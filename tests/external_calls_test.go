@@ -412,3 +412,47 @@ func TestExternalCalls_IdempotencyKey(t *testing.T) {
 		t.Fatalf("expected idempotency key 'call-1', got %q", keys[0])
 	}
 }
+
+func TestExternalCalls_DefaultQueue(t *testing.T) {
+	store := newMemStore()
+	queue := newFakeQueue(store)
+	crud.SetDefaultQueue(queue)
+	defer crud.SetDefaultQueue(nil)
+
+	if crud.DefaultQueue() != queue {
+		t.Fatalf("expected DefaultQueue to return queue")
+	}
+
+	callDef := model.ExternalCallDefinition{Name: "charge", Mode: model.WaitForReply, MaxWaitSeconds: 5}
+	called := false
+
+	mod := &testModule{
+		table: crud.StoredEntity{
+			Model:         &tRec{},
+			NewList:       func() model.ModelSlice { return &tRecList{} },
+			Store:         store,
+			Rules:         declareRules(model.AllActions, model.Create),
+			ExternalCalls: []model.ExternalCallDefinition{callDef},
+			Calls: map[string]crud.ExternalCallFunc{
+				"charge": func(a crud.CurrentUser, rec model.Model, key crud.IdempotencyKey) (crud.FieldsToSave, error) {
+					called = true
+					return nil, nil
+				},
+			},
+			Create: func(a crud.CurrentUser, tx crud.Tx, rec model.Model) (crud.RuleAnswer, error) {
+				return crud.ApplyAndPublish(fakeCall{name: "charge"}), nil
+			},
+		},
+	}
+
+	// Loopback without explicit queue uses DefaultQueue
+	caller := crud.Loopback(nil, mod)
+	var err error
+	caller.Call(operationOf(model.Create), &crud.CreateArgs{Records: []model.Model{&tRec{ID: "r1", Name: "defq"}}}, nil, func(e error) { err = e })
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+	if !called {
+		t.Fatalf("expected external call to execute through DefaultQueue")
+	}
+}

@@ -14,13 +14,16 @@ import (
 //
 //	caller := crud.Loopback(nil, patients)
 func Loopback(pub events.Publisher, mods ...Module) router.Caller {
-	return LoopbackWithQueue(pub, nil, mods...)
+	return LoopbackWithQueue(pub, defaultQueue, mods...)
 }
 
 // LoopbackWithQueue is Loopback with a CallQueue for orchestrating external calls.
 //
 //	caller := crud.LoopbackWithQueue(broker, queue, payments)
 func LoopbackWithQueue(pub events.Publisher, q CallQueue, mods ...Module) router.Caller {
+	if q == nil {
+		q = defaultQueue
+	}
 	return newLoopbackCaller(pub, "", q, mods)
 }
 
@@ -28,13 +31,16 @@ func LoopbackWithQueue(pub events.Publisher, q CallQueue, mods ...Module) router
 //
 //	caller := crud.LoopbackActingAs(broker, "u1", payments)
 func LoopbackActingAs(pub events.Publisher, userID string, mods ...Module) router.Caller {
-	return LoopbackActingAsWithQueue(pub, userID, nil, mods...)
+	return LoopbackActingAsWithQueue(pub, userID, defaultQueue, mods...)
 }
 
 // LoopbackActingAsWithQueue is LoopbackActingAs with a CallQueue for orchestrating external calls.
 //
 //	caller := crud.LoopbackActingAsWithQueue(broker, "u1", queue, payments)
 func LoopbackActingAsWithQueue(pub events.Publisher, userID string, q CallQueue, mods ...Module) router.Caller {
+	if q == nil {
+		q = defaultQueue
+	}
 	return newLoopbackCaller(pub, userID, q, mods)
 }
 

@@ -17,6 +17,22 @@ const (
 	ErrEmptyModelName mountError = "crud: entity with empty ModelName()"
 )
 
+var defaultQueue CallQueue
+
+// SetDefaultQueue sets the default queue used when mounting or calling without an explicit queue.
+//
+//	crud.SetDefaultQueue(queue)
+func SetDefaultQueue(q CallQueue) {
+	defaultQueue = q
+}
+
+// DefaultQueue answers the default queue set by SetDefaultQueue, or nil when none was set.
+//
+//	q := crud.DefaultQueue()
+func DefaultQueue() CallQueue {
+	return defaultQueue
+}
+
 // Mount mounts m's operations on a transport's registry: every operation gets its canonical name Operation(entity, action),
 // Requires(Resource(entity.ModelName()), action) and the validation of validate.go. An action in public is mounted Public
 // instead (only the app passes public). pub receives the events crud publishes after each commit; nil means nobody listens.
@@ -25,13 +41,16 @@ const (
 //
 //	if err := crud.Mount(reg, nil, broker, patients); err != nil { return err }
 func Mount(reg router.OperationRegistry, public []Public, pub events.Publisher, m Module) error {
-	return MountWithQueue(reg, public, pub, nil, m)
+	return MountWithQueue(reg, public, pub, defaultQueue, m)
 }
 
 // MountWithQueue mounts m's operations on a transport's registry, providing q for orchestrating external calls.
 //
 //	if err := crud.MountWithQueue(reg, nil, broker, queue, payments); err != nil { return err }
 func MountWithQueue(reg router.OperationRegistry, public []Public, pub events.Publisher, q CallQueue, m Module) error {
+	if q == nil {
+		q = defaultQueue
+	}
 	def := m.Definition()
 	if err := definitioncheck.CheckModule(def); err != nil {
 		return err

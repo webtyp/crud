@@ -86,3 +86,4 @@
 | [TestExternalCalls_WaitForReply](../tests/external_calls_test.go) | WaitForReply response in time updates fields, timeout or error fails without retry |
 | [TestExternalCalls_WaitForConfirmation](../tests/external_calls_test.go) | WaitForConfirmation stays queued until ConfirmCall or RejectCall |
 | [TestExternalCalls_IdempotencyKey](../tests/external_calls_test.go) | idempotency key is stable queued call ID across attempts |
+| [TestExternalCalls_DefaultQueue](../tests/external_calls_test.go) | SetDefaultQueue configures the queue used by Mount and Loopback |
