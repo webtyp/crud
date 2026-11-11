@@ -2,6 +2,8 @@
 PLAN: "feat: crud stores an uploaded file: Create with raw bytes, download route, no orphans"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 15655902573488726494
 ---
 
 > Read AGENTS.md at the repo root before any change.
