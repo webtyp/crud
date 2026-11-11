@@ -150,6 +150,8 @@ func (c *loopbackCaller) Dispatch(op router.Operation, args model.Encodable) {
 
 var _ router.Caller = (*loopbackCaller)(nil)
 
+var _ router.Context = (*loopbackContext)(nil)
+
 type loopbackContext struct {
 	body      []byte
 	out       []byte
@@ -161,6 +163,10 @@ type loopbackContext struct {
 
 func (c *loopbackContext) Method() string            { return "" }
 func (c *loopbackContext) Path() string              { return "" }
+
+// RawQuery is empty: a loopback call has no URL, its arguments travel in the body.
+func (c *loopbackContext) RawQuery() string { return "" }
+
 func (c *loopbackContext) Body() []byte              { return c.body }
 func (c *loopbackContext) GetHeader(_ string) string { return "" }
 func (c *loopbackContext) SetHeader(_, _ string)     {}
