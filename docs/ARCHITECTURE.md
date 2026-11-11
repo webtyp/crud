@@ -28,6 +28,8 @@ flowchart TD
 6. **External Calls Orchestration (D58):** Calls declared in `Definition.ExternalCalls` are queued transactionally in `CallQueue` within the write's `tx`. `WaitForReply` runs inline with a timeout; `RetryInBackground` retries with backoff in background; `WaitForConfirmation` waits for provider confirmation via `ConfirmCall` / `RejectCall`. `SetDefaultQueue` allows the composition root (appkit) to provide the queue for `Mount` and `Loopback`.
 7. **[`crud/conformance`](../conformance/conformance.go):** Test suite proving an implementation of `crud.Store` satisfies its contract with `conformance.Run(t, newStore)`, concurrency included (one winner among racing creates, unique values and conditional updates). `crud` imports no implementation: each store and each driver runs the suite in its own tests (the `orm` store over `storage/mem` in `orm`, over a real database in the driver's tests).
 
+The loopback context carries no URL, so `Path()` and `RawQuery()` are empty.
+
 ## 3. Execution & Data Flow
 
 For details on write operation progression, see [`docs/diagrams/WRITE_FLOW.md`](diagrams/WRITE_FLOW.md).

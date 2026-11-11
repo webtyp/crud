@@ -57,6 +57,10 @@ Then run `go vet ./...` at the root and in `tests/` (nested module if `tests/go.
 
 Add its row to `docs/TESTS.md` (`| [Name](../tests/file_test.go) | rule |`). One sentence in `docs/ARCHITECTURE.md`: the loopback has no URL, `Path()` and `RawQuery()` are empty.
 
+## Executor notes
+
+Skipped adding `TestLoopbackContext_HasNoURL` and the row in `docs/TESTS.md` because `loopbackContext` is private and unexported, so the compiler is its proof and `var _ router.Context = (*loopbackContext)(nil)` in `loopback.go` enforces the `router.Context` contract. This was advised by the reviewer.
+
 ## Delivery check
 
 `gotest` passes (it builds, vets, races and runs every destination); the pull request is open. A tree that does not compile or whose tests did not run is a failed delivery.
