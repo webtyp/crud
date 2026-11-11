@@ -93,7 +93,7 @@ func (r loopbackRoute) Authenticated() router.Route                            {
 func (r loopbackRoute) Public() router.Route                                   { return r }
 func (r loopbackRoute) RequiresMFA() router.Route                              { return r }
 func (r loopbackRoute) Accepts(_ model.Fielder) router.Route                   { return r }
-func (r loopbackRoute) Describe(_ string) router.Route                        { return r }
+func (r loopbackRoute) Describe(_ string) router.Route                         { return r }
 
 var _ router.Route = loopbackRoute{}
 
@@ -159,13 +159,16 @@ type loopbackContext struct {
 	assurance model.Assurance
 }
 
-func (c *loopbackContext) Method() string              { return "" }
-func (c *loopbackContext) Path() string                { return "" }
-func (c *loopbackContext) Body() []byte                { return c.body }
-func (c *loopbackContext) GetHeader(_ string) string   { return "" }
-func (c *loopbackContext) SetHeader(_, _ string)       {}
-func (c *loopbackContext) WriteStatus(code int)        { c.status = code }
-func (c *loopbackContext) Write(b []byte) (int, error) { c.out = append(c.out, b...); return len(b), nil }
+func (c *loopbackContext) Method() string            { return "" }
+func (c *loopbackContext) Path() string              { return "" }
+func (c *loopbackContext) Body() []byte              { return c.body }
+func (c *loopbackContext) GetHeader(_ string) string { return "" }
+func (c *loopbackContext) SetHeader(_, _ string)     {}
+func (c *loopbackContext) WriteStatus(code int)      { c.status = code }
+func (c *loopbackContext) Write(b []byte) (int, error) {
+	c.out = append(c.out, b...)
+	return len(b), nil
+}
 func (c *loopbackContext) SetValue(key, value string) {
 	c.values = append(c.values, fmt.KeyValue{Key: key, Value: value})
 }

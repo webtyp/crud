@@ -14,14 +14,16 @@ type recordingFieldWriter struct {
 	strs    []string // strings pushed into any array
 }
 
-func (w *recordingFieldWriter) String(name, val string)                 {}
-func (w *recordingFieldWriter) Int(name string, val int64)              {}
-func (w *recordingFieldWriter) Float(name string, val float64)          {}
-func (w *recordingFieldWriter) Bool(name string, val bool)              {}
-func (w *recordingFieldWriter) Bytes(name string, val []byte)           {}
-func (w *recordingFieldWriter) Null(name string)                        {}
-func (w *recordingFieldWriter) Raw(name, val string)                    {}
-func (w *recordingFieldWriter) Object(name string, val model.Encodable) { w.objects = append(w.objects, name) }
+func (w *recordingFieldWriter) String(name, val string)        {}
+func (w *recordingFieldWriter) Int(name string, val int64)     {}
+func (w *recordingFieldWriter) Float(name string, val float64) {}
+func (w *recordingFieldWriter) Bool(name string, val bool)     {}
+func (w *recordingFieldWriter) Bytes(name string, val []byte)  {}
+func (w *recordingFieldWriter) Null(name string)               {}
+func (w *recordingFieldWriter) Raw(name, val string)           {}
+func (w *recordingFieldWriter) Object(name string, val model.Encodable) {
+	w.objects = append(w.objects, name)
+}
 func (w *recordingFieldWriter) Array(name string, n int) model.ArrayWriter {
 	w.arrays = append(w.arrays, name)
 	return &recordingArray{parent: w}

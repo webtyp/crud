@@ -22,7 +22,7 @@ type Query struct {
 //
 // A Store scoped to a tenant applies the tenant to every call.
 type Tx interface {
-	ReadOne(rec model.Model, id string) error                                          // an error of kind model.ErrorNotFound when absent
+	ReadOne(rec model.Model, id string) error // an error of kind model.ErrorNotFound when absent
 	ReadAll(newRow func() model.Model, q Query, onRow func(model.Model)) error
 	Create(rec model.Model) error
 	UpdateFields(rec model.Model, id string, fields []string) error

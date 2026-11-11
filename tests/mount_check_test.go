@@ -97,7 +97,7 @@ type multiEntityModule struct {
 	mounts func(reg crud.Registry)
 }
 
-func (m *multiEntityModule) ModelName() string                 { return m.name }
+func (m *multiEntityModule) ModelName() string                  { return m.name }
 func (m *multiEntityModule) Definition() model.ModuleDefinition { return m.def }
 func (m *multiEntityModule) MountOperations(reg crud.Registry) {
 	if m.mounts != nil {
