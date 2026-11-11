@@ -2,6 +2,8 @@
 PLAN: "feat!: crud loopback Context.RawQuery() (router v0.5.0)"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 17452436091097938068
 ---
 
 > Read AGENTS.md at the repo root before any change.
