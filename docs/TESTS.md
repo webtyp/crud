@@ -20,7 +20,7 @@
 | [TestStoredEntity_UpdateOnlyListedFields](../tests/stored_entity_test.go) | update fields `["name"]` → stored updated fields |
 | [TestStoredEntity_UpdateMissingIsNotFound](../tests/stored_entity_test.go) | update id "nope" → error kind `model.ErrorNotFound` |
 | [TestStoredEntity_UpdateHookSeesOldAndNext](../tests/stored_entity_test.go) | hook rejects when `old.name == "locked"` → row unchanged |
-| [TestStoredEntity_SearchDefaultUsesItemLabel](../tests/stored_entity_test.go) | search default uses ItemLabel |
+| [TestStoredEntity_SearchDefaultUsesTextSearch](../tests/stored_entity_test.go) | the default search reads the row's text_search |
 | [TestStoredEntity_SearchReceivesTheFilterAsAnEntityRecord](../tests/stored_entity_test.go) | the `Search` rule gets a record of the entity with only the fields the caller sent (the entity is its own filter) |
 | [TestStoredEntity_FilterNeedsNoRequiredField](../tests/stored_entity_test.go) | an empty or partial filter is valid even when the entity has a required key or a NotNull field |
 | [TestStoredEntity_SearchRunsWithoutText](../tests/stored_entity_test.go) | the `Search` rule runs on every read, with `text == ""` when none was sent |
@@ -87,3 +87,8 @@
 | [TestExternalCalls_WaitForConfirmation](../tests/external_calls_test.go) | WaitForConfirmation stays queued until ConfirmCall or RejectCall |
 | [TestExternalCalls_IdempotencyKey](../tests/external_calls_test.go) | idempotency key is stable queued call ID across attempts |
 | [TestExternalCalls_DefaultQueue](../tests/external_calls_test.go) | SetDefaultQueue configures the queue used by Mount and Loopback |
+| [TestTextSearch_IgnoresAccentsAndCase](../tests/text_search_test.go) | «LUCIA» finds «Lucía Pérez». |
+| [TestTextSearch_EveryWordMustAppear](../tests/text_search_test.go) | Every typed word must appear in the row. |
+| [TestTextSearch_RuleAddsConditionsNeverReplacesText](../tests/text_search_test.go) | A Search rule adds conditions; the text search still applies. |
+| [TestTextSearch_ListsOnlyAfterSearchReturnsNothingWithoutText](../tests/text_search_test.go) | A ListsOnlyAfterSearch entity lists nothing without text. |
+| [TestTextSearch_ListsOnlyAfterSearchNeedsATextField](../tests/text_search_test.go) | Mounting such an entity without a text-search field fails. |

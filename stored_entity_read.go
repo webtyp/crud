@@ -1,8 +1,6 @@
 package crud
 
 import (
-	"webtyp.com/fmt"
-
 	"webtyp.com/model"
 	"webtyp.com/router"
 	"webtyp.com/storage"
@@ -43,11 +41,23 @@ func readRecordsHandler(entity StoredEntity, schemaFields []model.Field) func(ct
 			return
 		}
 
-		currentUser := currentUserOf(ctx)
-		var conds []storage.Condition
+		textConds := textSearchConditions(args.Search)
+		if len(textConds) == 0 && listsOnlyAfterSearch(entity.Model) {
+			if enc, ok := entity.NewList().(model.Encodable); ok {
+				if err := ctx.Encode(enc); err != nil {
+					router.WriteError(ctx, err)
+				}
+			}
+			return
+		}
+		if len(textConds) > 0 && len(model.TextSearchFields(schemaFields)) == 0 {
+			router.WriteError(ctx, ErrNoSearchField)
+			return
+		}
 
+		var conds []storage.Condition
 		if entity.Search != nil {
-			hooks, err := entity.Search(currentUser, args.Filter, args.Search)
+			hooks, err := entity.Search(currentUserOf(ctx), args.Filter)
 			if err != nil {
 				router.WriteError(ctx, err)
 				return
@@ -59,20 +69,8 @@ func readRecordsHandler(entity StoredEntity, schemaFields []model.Field) func(ct
 				}
 			}
 			conds = append(conds, hooks...)
-		} else if args.Search != "" {
-			var labelField string
-			for _, f := range schemaFields {
-				if f.Item == model.ItemLabel {
-					labelField = f.Name
-					break
-				}
-			}
-			if labelField == "" {
-				router.WriteError(ctx, ErrNoSearchField)
-				return
-			}
-			conds = append(conds, storage.Like(labelField, "%"+fmt.ToLower(args.Search)+"%"))
 		}
+		conds = append(conds, textConds...)
 
 		limit := Cap(args.Limit)
 		q := Query{

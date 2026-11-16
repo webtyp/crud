@@ -31,6 +31,7 @@ type Tx interface {
 
 // Store is the repository of one table or resource (Repository pattern): orm.TenantStore for a table of the module,
 // or a Store the module writes over another service's API (D21).
+// A Store of a table with text-search fields (model.TextSearchFields) keeps model.FieldTextSearch on every write; orm.Store does.
 type Store interface {
 	Tx
 	NewID() string

@@ -43,10 +43,10 @@ type StoredEntity struct {
 	Update func(a CurrentUser, tx Tx, old, next model.Model, fields []string) (RuleAnswer, error)
 	// Delete runs per id, before the delete; rec is the stored row.
 	Delete func(a CurrentUser, tx Tx, rec model.Model) (RuleAnswer, error)
-	// Search replaces the default search: AND-only conditions. Declared with Rules.Read == model.AddMyBusinessRule.
-	// It runs on every read of the table, with or without text. filter is a record of the entity itself carrying only the fields the
-	// caller sent (the entity is its own filter: `filter.sku` on the wire); text is "" when none was sent.
-	Search func(a CurrentUser, filter model.Model, text string) ([]storage.Condition, error)
+	// Search adds AND-only conditions to every read of the table (a state, a site…). Declared with Rules.Read == model.AddMyBusinessRule.
+	// It never searches the text: crud always adds one condition per typed word on the row's text_search (model.FieldTextSearch).
+	// filter is a record of the entity itself carrying only the fields the caller sent (the entity is its own filter: `filter.sku` on the wire).
+	Search func(a CurrentUser, filter model.Model) ([]storage.Condition, error)
 	MFA    model.Action // actions that require a second factor
 	// ExternalCalls lists the external calls declared for this entity in Definition.ExternalCalls.
 	ExternalCalls []model.ExternalCallDefinition

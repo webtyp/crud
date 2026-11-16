@@ -19,6 +19,7 @@ const (
 	ErrBatchNotAtomic  model.Invalid = "crud: the resource saves one record at a time; send one record per request"
 	ErrOrCondition     model.Invalid = "crud: a search returned an OR condition; conditions are not grouped, so an OR could read other tenants' rows — return AND conditions only"
 	ErrNoSearchField   model.Invalid = "crud: the entity has no searchable field"
+	ErrSearchFirstWithoutText mountError = "crud: the model lists only after a search but no field enters text_search; give it an input.Text, Phone, Email or Rut field"
 
 	//lang:ignore
 	ErrAfter = "crud: After pages "
@@ -79,6 +80,10 @@ func (r *operationMounter) AddStoredEntity(entity StoredEntity) {
 			r.failMount(err)
 			return
 		}
+	}
+	if listsOnlyAfterSearch(entity.Model) && len(model.TextSearchFields(entity.Model.Schema())) == 0 {
+		r.failMount(ErrSearchFirstWithoutText)
+		return
 	}
 	r.mountedEntities = append(r.mountedEntities, def.Name)
 	publisher := eventPublisher{pub: r.pub, module: r.module, entity: def.Name}

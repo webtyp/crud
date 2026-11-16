@@ -51,7 +51,7 @@ func (m *tRec) Pointers() []any {
 func (m *tRec) Schema() []model.Field {
 	return []model.Field{
 		{Name: "id", Type: model.Text(), DB: &model.FieldDB{PK: true, AutoInc: true}},
-		{Name: "name", Type: model.Text(), Item: model.ItemLabel},
+		{Name: "name", Type: searchText{model.Text()}, Item: model.ItemLabel},
 		{Name: "note", Type: model.Text()},
 		{Name: "created_at", Type: model.Int(), ServerOnly: true},
 		{Name: "updated_at", Type: model.Int(), ServerOnly: true},
@@ -298,7 +298,7 @@ func TestStoredEntity_UpdateHookSeesOldAndNext(t *testing.T) {
 	}
 }
 
-func TestStoredEntity_SearchDefaultUsesItemLabel(t *testing.T) {
+func TestStoredEntity_SearchDefaultUsesTextSearch(t *testing.T) {
 	store := newMemStore()
 	store.Create(&tRec{ID: "1", Name: "Ana"})
 	store.Create(&tRec{ID: "2", Name: "Bruno"})
@@ -326,7 +326,7 @@ func TestStoredEntity_SearchHookOrIsRejected(t *testing.T) {
 		NewList: func() model.ModelSlice { return &tRecList{} },
 		Store:   newMemStore(),
 		Rules:   declareRules(model.AllActions, model.Read),
-		Search: func(c crud.CurrentUser, _ model.Model, text string) ([]storage.Condition, error) {
+		Search: func(c crud.CurrentUser, _ model.Model) ([]storage.Condition, error) {
 			return []storage.Condition{storage.Or(storage.Eq("name", "1"))}, nil
 		},
 	}}
@@ -348,7 +348,7 @@ func TestStoredEntity_SearchReceivesTheFilterAsAnEntityRecord(t *testing.T) {
 		NewList: func() model.ModelSlice { return &tRecList{} },
 		Store:   store,
 		Rules:   declareRules(model.AllActions, model.Read),
-		Search: func(c crud.CurrentUser, filter model.Model, text string) ([]storage.Condition, error) {
+		Search: func(c crud.CurrentUser, filter model.Model) ([]storage.Condition, error) {
 			got = filter.(*tRec)
 			return []storage.Condition{storage.Eq("name", got.Name)}, nil
 		},
@@ -372,8 +372,8 @@ func TestStoredEntity_SearchRunsWithoutText(t *testing.T) {
 		NewList: func() model.ModelSlice { return &tRecList{} },
 		Store:   newMemStore(),
 		Rules:   declareRules(model.AllActions, model.Read),
-		Search: func(c crud.CurrentUser, filter model.Model, text string) ([]storage.Condition, error) {
-			called = text == ""
+		Search: func(c crud.CurrentUser, filter model.Model) ([]storage.Condition, error) {
+			called = true
 			return nil, nil
 		},
 	}}
@@ -423,7 +423,7 @@ func TestStoredEntity_FilterNeedsNoRequiredField(t *testing.T) {
 		NewList: func() model.ModelSlice { return &fRecList{} },
 		Store:   newMemStore(),
 		Rules:   declareRules(model.Read, model.Read),
-		Search: func(c crud.CurrentUser, filter model.Model, text string) ([]storage.Condition, error) {
+		Search: func(c crud.CurrentUser, filter model.Model) ([]storage.Condition, error) {
 			got = filter.(*fRec)
 			return nil, nil
 		},

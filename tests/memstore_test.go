@@ -78,6 +78,7 @@ func (s *memStore) Create(rec model.Model) error {
 			row[f.Name] = *p
 		}
 	}
+	keepTextSearch(row, schema)
 	id := model.JoinKey(parts...)
 	if _, exists := s.rows[id]; exists {
 		return storage.Duplicate(fmt.Err("memstore: duplicate key", id))
@@ -120,6 +121,7 @@ func (s *memStore) UpdateFields(rec model.Model, id string, fields []string) err
 			}
 		}
 	}
+	keepTextSearch(row, schema)
 	return nil
 }
 
@@ -151,6 +153,7 @@ func (s *memStore) UpdateFieldsIf(rec model.Model, id string, fields []string, f
 			}
 		}
 	}
+	keepTextSearch(row, schema)
 	return 1, nil
 }
 
@@ -260,4 +263,19 @@ func (s *memStore) Atomic(fn func(crud.Tx) error) error {
 		s.mu.Unlock()
 	}
 	return err
+}
+
+// keepTextSearch writes text_search of row from the values the row holds now, as every crud.Store of a table with
+// text-search fields must (orm.Store does it in orm.DB).
+func keepTextSearch(row map[string]any, schema []model.Field) {
+	idx := model.TextSearchFields(schema)
+	if len(idx) == 0 {
+		return
+	}
+	ptrs := make([]any, len(schema))
+	for _, i := range idx {
+		v, _ := row[schema[i].Name].(string)
+		ptrs[i] = &v
+	}
+	row[model.FieldTextSearch] = model.TextSearchOf(schema, ptrs)
 }
