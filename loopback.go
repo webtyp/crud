@@ -24,7 +24,7 @@ func LoopbackWithQueue(pub events.Publisher, q CallQueue, mods ...Module) router
 	if q == nil {
 		q = defaultQueue
 	}
-	return newLoopbackCaller(pub, "", q, mods)
+	return newLoopbackCaller(pub, "", 0, nil, q, mods)
 }
 
 // LoopbackActingAs is Loopback signed in as userID: operations see it in CurrentUser.UserID.
@@ -34,17 +34,29 @@ func LoopbackActingAs(pub events.Publisher, userID string, mods ...Module) route
 	return LoopbackActingAsWithQueue(pub, userID, defaultQueue, mods...)
 }
 
+// LoopbackActingAsUse is Loopback signed in as userID with a specific ModuleUse and owned record IDs.
+//
+//	caller := crud.LoopbackActingAsUse(broker, "u1", model.SeesOwnRecords, []string{"c1"}, clients)
+func LoopbackActingAsUse(pub events.Publisher, userID string, use model.ModuleUse, ownedIDs []string, mods ...Module) router.Caller {
+	return LoopbackActingAsUseWithQueue(pub, userID, use, ownedIDs, defaultQueue, mods...)
+}
+
 // LoopbackActingAsWithQueue is LoopbackActingAs with a CallQueue for orchestrating external calls.
 //
 //	caller := crud.LoopbackActingAsWithQueue(broker, "u1", queue, payments)
 func LoopbackActingAsWithQueue(pub events.Publisher, userID string, q CallQueue, mods ...Module) router.Caller {
+	return LoopbackActingAsUseWithQueue(pub, userID, 0, nil, q, mods...)
+}
+
+// LoopbackActingAsUseWithQueue is LoopbackActingAsUse with a CallQueue for orchestrating external calls.
+func LoopbackActingAsUseWithQueue(pub events.Publisher, userID string, use model.ModuleUse, ownedIDs []string, q CallQueue, mods ...Module) router.Caller {
 	if q == nil {
 		q = defaultQueue
 	}
-	return newLoopbackCaller(pub, userID, q, mods)
+	return newLoopbackCaller(pub, userID, use, ownedIDs, q, mods)
 }
 
-func newLoopbackCaller(pub events.Publisher, userID string, q CallQueue, mods []Module) router.Caller {
+func newLoopbackCaller(pub events.Publisher, userID string, use model.ModuleUse, ownedIDs []string, q CallQueue, mods []Module) router.Caller {
 	reg := &loopbackRegistry{}
 	for _, m := range mods {
 		if m == nil {
@@ -58,7 +70,7 @@ func newLoopbackCaller(pub events.Publisher, userID string, q CallQueue, mods []
 			panic(err.Error())
 		}
 	}
-	return &loopbackCaller{reg: reg, userID: userID}
+	return &loopbackCaller{reg: reg, userID: userID, use: use, ownedIDs: ownedIDs}
 }
 
 type loopbackRegistry struct {
@@ -98,8 +110,10 @@ func (r loopbackRoute) Describe(_ string) router.Route                         {
 var _ router.Route = loopbackRoute{}
 
 type loopbackCaller struct {
-	reg    *loopbackRegistry
-	userID string
+	reg      *loopbackRegistry
+	userID   string
+	use      model.ModuleUse
+	ownedIDs []string
 }
 
 func (c *loopbackCaller) Call(op router.Operation, args model.Encodable, into model.Decodable, done func(err error)) {
@@ -121,7 +135,7 @@ func (c *loopbackCaller) Call(op router.Operation, args model.Encodable, into mo
 		return
 	}
 
-	ctx := &loopbackContext{body: buf, userID: c.userID}
+	ctx := &loopbackContext{body: buf, userID: c.userID, use: c.use, ownedIDs: c.ownedIDs}
 	entry.h(ctx)
 
 	if ctx.status >= 400 {
@@ -159,7 +173,12 @@ type loopbackContext struct {
 	values    []fmt.KeyValue
 	userID    string
 	assurance model.Assurance
+	use       model.ModuleUse
+	ownedIDs  []string
 }
+
+func (c *loopbackContext) ModuleUse() model.ModuleUse { return c.use }
+func (c *loopbackContext) OwnedRecordIDs() []string   { return c.ownedIDs }
 
 func (c *loopbackContext) Method() string            { return "" }
 func (c *loopbackContext) Path() string              { return "" }

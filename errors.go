@@ -13,6 +13,7 @@ const (
 	ErrUnknownField     model.Invalid = "crud: unknown field"
 	ErrArgTooLong       model.Invalid = "crud: argument too long"
 	ErrServerOnlyField  model.Invalid  = "crud: field written only by the server"
+	ErrHiddenField      model.Invalid  = "crud: field is hidden from record owner"
 	ErrAlreadyExists    model.Conflict = "crud: the key already exists"
 	ErrConflict         model.Conflict = "crud: the record changed since you read it; read it again"
 	ErrRevisionRequired model.Invalid  = "crud: send the revision you read"

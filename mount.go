@@ -139,4 +139,16 @@ type failedRoute struct{}
 func (failedRoute) RequiresMFA() Route    { return failedRoute{} }
 func (failedRoute) Describe(string) Route { return failedRoute{} }
 
-func currentUserOf(ctx router.Context) CurrentUser { return CurrentUser{UserID: ctx.UserID()} }
+type useContext interface {
+	ModuleUse() model.ModuleUse
+	OwnedRecordIDs() []string
+}
+
+func currentUserOf(ctx router.Context) CurrentUser {
+	u := CurrentUser{UserID: ctx.UserID()}
+	if uc, ok := ctx.(useContext); ok {
+		u.Use = uc.ModuleUse()
+		u.OwnedRecordIDs = uc.OwnedRecordIDs()
+	}
+	return u
+}

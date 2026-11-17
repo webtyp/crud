@@ -23,6 +23,12 @@ func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 			router.WriteError(ctx, err)
 			return
 		}
+		if currentUserOf(ctx).Use == model.SeesOwnRecords {
+			if err := validateHiddenUpdateFields(schemaFields, request.Fields); err != nil {
+				router.WriteError(ctx, err)
+				return
+			}
+		}
 
 		if len(request.IDs) > 1 {
 			if _, ok := entity.Store.(Transactional); !ok {

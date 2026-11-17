@@ -92,3 +92,5 @@
 | [TestTextSearch_RuleAddsConditionsNeverReplacesText](../tests/text_search_test.go) | A Search rule adds conditions; the text search still applies. |
 | [TestTextSearch_ListsOnlyAfterSearchReturnsNothingWithoutText](../tests/text_search_test.go) | A ListsOnlyAfterSearch entity lists nothing without text. |
 | [TestTextSearch_ListsOnlyAfterSearchNeedsATextField](../tests/text_search_test.go) | Mounting such an entity without a text-search field fails. |
+| [TestRecordOwner_HiddenFieldsOmittedForSeesOwnRecords](../tests/record_owner_test.go) | HiddenFromRecordOwner fields are omitted on read and rejected on write for SeesOwnRecords. |
+| [TestRecordOwner_LoopbackActingAsUsePassesUseAndOwnedIDs](../tests/record_owner_test.go) | LoopbackActingAsUse passes UserID, Use and OwnedRecordIDs to operations. |

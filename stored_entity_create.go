@@ -27,6 +27,12 @@ func createRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 		}
 
 		currentUser := currentUserOf(ctx)
+		if currentUser.Use == model.SeesOwnRecords {
+			if err := validateHiddenCreateBatch(schemaFields, request.list); err != nil {
+				router.WriteError(ctx, err)
+				return
+			}
+		}
 		alreadyStored := make([]bool, request.list.Len())
 		ruleAnswers := make([]RuleAnswer, request.list.Len())
 		var allReplies []pendingReply

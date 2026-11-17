@@ -70,9 +70,17 @@ func validateFilter(f model.Model) error {
 }
 
 func writesServerOnlyField(schema []model.Field, rec model.Fielder) bool {
+	return writesRestrictedField(schema, rec, func(f model.Field) bool { return f.ServerOnly })
+}
+
+func writesHiddenField(schema []model.Field, rec model.Fielder) bool {
+	return writesRestrictedField(schema, rec, func(f model.Field) bool { return f.HiddenFromRecordOwner })
+}
+
+func writesRestrictedField(schema []model.Field, rec model.Fielder, match func(model.Field) bool) bool {
 	ptrs := rec.Pointers()
 	for i := range schema {
-		if !schema[i].ServerOnly {
+		if !match(schema[i]) {
 			continue
 		}
 		ft := schema[i].Type.Storage()
@@ -88,6 +96,26 @@ func writesServerOnlyField(schema []model.Field, rec model.Fielder) bool {
 		}
 	}
 	return false
+}
+
+func validateHiddenCreateBatch(schema []model.Field, list model.ModelSlice) error {
+	for i := 0; i < list.Len(); i++ {
+		if writesHiddenField(schema, list.At(i)) {
+			return ErrHiddenField
+		}
+	}
+	return nil
+}
+
+func validateHiddenUpdateFields(schema []model.Field, fields []string) error {
+	for _, f := range fields {
+		for k := range schema {
+			if schema[k].Name == f && schema[k].HiddenFromRecordOwner {
+				return ErrHiddenField
+			}
+		}
+	}
+	return nil
 }
 
 // validateCreateBatch checks batch size limits and executes declarative schema validation

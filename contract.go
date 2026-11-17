@@ -10,7 +10,9 @@ import (
 //
 // Example: func(a crud.CurrentUser, tx crud.Tx, p *Payment, m *Module) (crud.RuleAnswer, error) { p.CreatedBy = a.UserID; … }
 type CurrentUser struct {
-	UserID string
+	UserID         string
+	Use            model.ModuleUse
+	OwnedRecordIDs []string
 }
 
 // Route is what a module may still say about one of its operations. It has no Public,
