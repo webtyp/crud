@@ -15,7 +15,7 @@ func createRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 			return
 		}
 		if err := validateCreateBatch(schemaFields, request.list, request.tooMany); err != nil {
-			router.WriteError(ctx, err)
+			publisher.rejected(ctx, err)
 			return
 		}
 
@@ -29,7 +29,7 @@ func createRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 		currentUser := currentUserOf(ctx)
 		if currentUser.Use == model.SeesOwnRecords {
 			if err := validateHiddenCreateBatch(schemaFields, request.list); err != nil {
-				router.WriteError(ctx, err)
+				publisher.rejected(ctx, err)
 				return
 			}
 		}

@@ -94,3 +94,4 @@
 | [TestTextSearch_ListsOnlyAfterSearchNeedsATextField](../tests/text_search_test.go) | Mounting such an entity without a text-search field fails. |
 | [TestRecordOwner_HiddenFieldsOmittedForSeesOwnRecords](../tests/record_owner_test.go) | HiddenFromRecordOwner fields are omitted on read and rejected on write for SeesOwnRecords. |
 | [TestRecordOwner_LoopbackActingAsUsePassesUseAndOwnedIDs](../tests/record_owner_test.go) | LoopbackActingAsUse passes UserID, Use and OwnedRecordIDs to operations. |
+| [TestWrite_RejectedInputIsASecurityEvent](../tests/rejected_write_test.go) | a write that breaks the declared shape is refused and reported as input_validation_fail with who and the entity |

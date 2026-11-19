@@ -16,16 +16,16 @@ func updateRecordsHandler(entity StoredEntity, publisher eventPublisher, schemaF
 			return
 		}
 		if err := validateIDs(request.IDs, request.hasEmpty, request.tooMany); err != nil {
-			router.WriteError(ctx, err)
+			publisher.rejected(ctx, err)
 			return
 		}
 		if err := validateUpdateFields(schemaFields, request.Fields, request.Record); err != nil {
-			router.WriteError(ctx, err)
+			publisher.rejected(ctx, err)
 			return
 		}
 		if currentUserOf(ctx).Use == model.SeesOwnRecords {
 			if err := validateHiddenUpdateFields(schemaFields, request.Fields); err != nil {
-				router.WriteError(ctx, err)
+				publisher.rejected(ctx, err)
 				return
 			}
 		}

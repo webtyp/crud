@@ -3,6 +3,8 @@ package crud
 import (
 	"webtyp.com/events"
 	"webtyp.com/model"
+	"webtyp.com/router"
+	"webtyp.com/securityevent"
 )
 
 const (
@@ -36,6 +38,21 @@ type eventPublisher struct {
 	pub    events.Publisher
 	module string
 	entity string
+}
+
+// reasonInvalidInput is the security reason of a write that broke the declared shape of the data.
+const reasonInvalidInput securityevent.Reason = "the request broke the declared shape of the data"
+
+// rejected reports a write that failed the declared validation as a security event (input_validation_fail: one is a
+// typo, many from one caller is probing) and answers the error. With no broker nobody listens.
+func (e eventPublisher) rejected(ctx router.Context, err error) {
+	if e.pub != nil {
+		if r, rerr := securityevent.New(e.pub); rerr == nil {
+			_ = r.Report(securityevent.Event{Kind: securityevent.InputRejected, UserID: ctx.UserID(), Resource: e.entity,
+				IP: ctx.Value(router.ContextKeyRemoteAddr), Reason: reasonInvalidInput})
+		}
+	}
+	router.WriteError(ctx, err)
 }
 
 func (e eventPublisher) publish(a model.Action, ch *Change) {

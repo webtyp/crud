@@ -14,7 +14,7 @@ func deleteRecordsHandler(entity StoredEntity, publisher eventPublisher, keyFiel
 			return
 		}
 		if err := validateIDs(request.IDs, request.hasEmpty, request.tooMany); err != nil {
-			router.WriteError(ctx, err)
+			publisher.rejected(ctx, err)
 			return
 		}
 
